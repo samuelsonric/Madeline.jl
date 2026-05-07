@@ -1,12 +1,25 @@
-name = "AlgebraicTemplate"
-uuid = "b66562e1-fa90-4e8b-9505-c909188fab76"
+name = "Madeline"
+uuid = "4db2d6d9-0925-4ef8-b567-cc767be9a2ec"
 license = "MIT"
-authors = ["AlgebraicJulia Developer <email@algebraicjulia.org>"]
 version = "0.0.1"
+authors = ["AlgebraicJulia Developer <email@algebraicjulia.org>"]
 
 [deps]
-Catlab = "134e5e36-593f-5add-ad60-77f754baafbe"
+CliqueTrees = "60701a23-6482-424a-84db-faee86b9b1f8"
+CommonSolve = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[sources]
+CliqueTrees = {path = "../CliqueTrees.jl"}
 
 [compat]
-Catlab = "^0.16"
-julia = "1.6"
+CliqueTrees = "1"
+CommonSolve = "0.2.6"
+LinearAlgebra = "1"
+MathOptInterface = "1.51.0"
+Printf = "1"
+SparseArrays = "1"
+julia = "1.10"

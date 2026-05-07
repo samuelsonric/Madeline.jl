@@ -1,7 +1,7 @@
-# AlgebraicTemplate.jl
+# Madeline.jl
 
 ```@meta
-CurrentModule = AlgebraicTemplate
+CurrentModule = Madeline
 ```
 
-`AlgebraicTemplate.jl` is a Julia library for...
+`Madeline.jl` is a Julia library for...

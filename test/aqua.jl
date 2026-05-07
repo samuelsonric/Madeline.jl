@@ -1,3 +1,3 @@
-using Aqua, AlgebraicTemplate 
+using Aqua, Madeline 
 
-Aqua.test_all(AlgebraicTemplate, ambiguities=false,)
+Aqua.test_all(Madeline, ambiguities=false,)
