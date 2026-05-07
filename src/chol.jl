@@ -39,6 +39,30 @@ function ldiv_fwd!(chol::Chol, b::AbstractVector)
     return b
 end
 
+function ldiv_fwd!(chol::Chol{T}, B::AbstractMatrix{T}) where {T}
+    @inbounds for j in axes(B, 2)
+        for i in 1:chol.rank
+            chol.temp[i] = B[chol.perm[i], j]
+        end
+
+        for i in 1:chol.rank
+            B[i, j] = chol.temp[i]
+        end
+
+        for i in chol.rank+1:size(B, 1)
+            B[i, j] = zero(T)
+        end
+    end
+
+    if ispositive(chol.rank)
+        Lr = view(chol.L, 1:chol.rank, 1:chol.rank)
+        Br = view(B,      1:chol.rank, :)
+        trsm!(Val(:L), Val(:L), Val(:N), Val(:N), one(T), Lr, Br)
+    end
+
+    return B
+end
+
 function ldiv_bwd!(chol::Chol, b::AbstractVector)
     if ispositive(chol.rank)
         Lr = view(chol.L, 1:chol.rank, 1:chol.rank)

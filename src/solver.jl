@@ -323,19 +323,17 @@ function build_newton_cache!(
 
     build_schur!(space, cache, x, w, L, problem)
 
-    u = @view cache.Γ[:, 1]
-    v = @view cache.Γ[:, 2]
-
     w.τ = one(T)
     copyto!(w.X, problem.C)
     hessian!(space, L, x, w, Val(false))
 
-    copyto!(u, problem.b)
-    ldiv_fwd!(cache.chol, u)
-    lmul!(w.τ, u)
+    u = @view cache.Γ[:, 1]
+    v = @view cache.Γ[:, 2]
 
+    copyto!(u, problem.b)
+    rmul!(u, w.τ)
     apply_constraint!(problem.A, problem.indices_primal, w.X, v, one(T), zero(T), Val(true))
-    ldiv_fwd!(cache.chol, v)
+    ldiv_fwd!(cache.chol, cache.Γ)
 
     syrk!(Val(:L), Val(:T), -one(T), cache.Γ, zero(T), cache.Σ)
     symmtri!(cache.Σ, Val(:L))
