@@ -346,6 +346,12 @@ function build_newton_cache!(
     return
 end
 
+# solve the KKT system
+#
+#    [  0   -b     Aᵀ    ] [ dy ]   [ y'      ]
+#    [ -bᵀ -μτ⁻²  -⟨C,·⟩ ] [ dτ ] = [ κ' - τ' ]
+#    [  A    C    -μH    ] [ dX ]   [ Z' - X' ]
+#
 function solve_newton!(
         space::Workspace{T, J},
         cache::KKT{T, J},
@@ -411,11 +417,6 @@ function solve_newton!(
     return
 end
 
-"""
-    refine_newton!(space, cache, wrk, res, dir, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
-
-Iterative refinement for rank-2 Newton solve.
-"""
 function refine_newton!(
         space::Workspace{T, J},
         cache::KKT{T, J},
