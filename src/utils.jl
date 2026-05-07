@@ -58,7 +58,7 @@ end
 
 # compute the inner product
 #
-#     ⟨X, Ac⟩
+#     ⟨x, Ac⟩
 #
 function dotpacked(
         X::ChordalTriangular{:N, :L, T, I},
@@ -97,7 +97,7 @@ end
 # copy
 #
 #     [ τ ] ← [-bc ]
-#     [ X ]   [ Ac ]
+#     [ x ]   [ Ac ]
 #
 function copytopacked!(w::Primal, A::SparseMatrixCSC, indices::AbstractVector, b::AbstractVector, c::Integer)
     copytopacked!(w.X, A, indices, c)
@@ -108,7 +108,7 @@ end
 # compute the inner product
 #
 #     ⟨[ τ ], [-bc ]⟩
-#     ⟨[ X ]  [ Ac ]⟩
+#     ⟨[ x ]  [ Ac ]⟩
 #
 function dotpacked(w::Primal, A::SparseMatrixCSC, indices::AbstractVector, b::AbstractVector, c::Integer)
     return dotpacked(w.X, A, indices, c) - w.τ * b[c]
@@ -157,7 +157,7 @@ end
 # compute the sum-product
 #
 #     [ τ ] ← [ τ ] + α [-bc ]
-#     [ X ]   [ X ]     [ Ac ]
+#     [ x ]   [ x ]     [ Ac ]
 #
 function axpypacked!(α::Number, A::SparseMatrixCSC, indices::AbstractVector, b::AbstractVector, c::Integer, w::Primal)
     axpypacked!(α, A, indices, c, w.X)
@@ -167,7 +167,7 @@ end
 
 # compute the sum-product
 #
-#     y ← α Aᵀ X + β y
+#     y ← α Aᵀ x + β y
 #
 function apply_constraint_primal!(A::SparseMatrixCSC, indices::AbstractVector, X::AbstractMatrix, y::AbstractVector, α, β)
     if iszero(β)
@@ -185,7 +185,7 @@ end
 
 # compute the sum-product
 #
-#     X ← α A y + β X
+#     x ← α A y + β x
 #
 function apply_constraint_dual!(A::SparseMatrixCSC, indices::AbstractVector, X::AbstractMatrix, y::AbstractVector, α, β)
     if iszero(β)
@@ -204,7 +204,7 @@ end
 # compute the sum-product
 #
 #     y ← α [-b Aᵀ ] [ τ ] + β y
-#                    [ X ]
+#                    [ x ]
 #
 function apply_constraint_primal!(A::SparseMatrixCSC, indices::AbstractVector, b::AbstractVector, p::Point, y::AbstractVector, α, β)
     apply_constraint_primal!(A, indices, p.X, y, α, β)
@@ -215,7 +215,7 @@ end
 # compute the sum-product
 #
 #     [ κ ] ← α [-bᵀ] y + β [ κ ]
-#     [ Z ]     [ A ]       [ Z ]
+#     [ z ]     [ A ]       [ z ]
 #
 function apply_constraint_dual!(A::SparseMatrixCSC, indices::AbstractVector, b::AbstractVector, p::Point, y::AbstractVector, α, β)
     apply_constraint_dual!(A, indices, p.X, y, α, β)
@@ -227,11 +227,11 @@ end
 #
 # SCALE = true:
 #
-#     y ← α Aᵀ X + β y
+#     y ← α Aᵀ x + β y
 #
 # SCALE = false:
 #
-#     X ← α A y + β X
+#     x ← α A y + β x
 #
 function apply_constraint!(A::SparseMatrixCSC, indices::AbstractVector, X::AbstractMatrix, y::AbstractVector, α, β, ::Val{SCALE}) where {SCALE}
     if SCALE
@@ -246,12 +246,12 @@ end
 # SCALE = true:
 #
 #     y ← α [-b Aᵀ ] [ τ ] + β y
-#                    [ X ]
+#                    [ x ]
 #
 # SCALE = false:
 #
 #     [ κ ] ← α [-bᵀ] y + β [ κ ]
-#     [ Z ]     [ A ]       [ Z ]
+#     [ z ]     [ A ]       [ z ]
 #
 function apply_constraint!(A::SparseMatrixCSC, indices::AbstractVector, b::AbstractVector, p::Point, y::AbstractVector, α, β, ::Val{SCALE}) where {SCALE}
     if SCALE
@@ -263,8 +263,8 @@ end
 
 # compute the sum-product
 #
-#     [ κ ] ← α [   -⟨C, ⋅⟩ ] [ τ ] + β [ κ ]
-#     [ Z ]     [ C         ] [ X ]     [ Z ]
+#     [ κ ] ← α [   -cᵀ ] [ τ ] + β [ κ ]
+#     [ z ]     [ c     ] [ c ]     [ z ]
 #
 function apply_cost!(α, C::SparseMatrixCSC, x::Primal, β, out::Point)
     if iszero(β)
@@ -280,11 +280,9 @@ end
 
 # compute the residual
 #
-#       y' ← -[-b Aᵀ ] [ τ ]
-#                      [ X ]
-#
-#     [ κ' ] ← [   -⟨C, ⋅⟩ ] [ τ ] - [-bᵀ] y - [ κ ]
-#     [ Z' ]   [ C         ] [ X ]   [ A ]     [ Z ]
+#     [ y' ]   [    b  -Aᵀ ] [ y ]   [   ]
+#     [ κ' ] = [ bᵀ    -cᵀ ] [ τ ] - [ κ ]
+#     [ z' ]   [-A  c      ] [ x ]   [ z ]
 #
 function residual!(
         res::PrimalDualSlack{:L, T, J},
@@ -340,14 +338,14 @@ end
 # PRIMAL = true:
 #
 #     [ κ ] ← ∇f ( [ τ ] )
-#     [ Z ]      ( [ X ] )
+#     [ z ]      ( [ x ] )
 #
 # PRIMAL = false:
 #
 #     [ τ ] ← ∇f*( [ κ ] )
-#     [ X ]      ( [ Z ] )
+#     [ x ]      ( [ z ] )
 #
-# where Z = LLᵀ.
+# where z = LLᵀ.
 #
 function gradient!(
         space::Workspace{T, J},
@@ -373,20 +371,20 @@ end
 # PRIMAL = true:
 #
 #     [ τ' ] ← ∇²f ( [ τ ] ) [ τ' ]
-#     [ X' ]       ( [ X ] ) [ X' ]
+#     [ x' ]       ( [ x ] ) [ x' ]
 #
 # PRIMAL = false:
 #
 #     [ τ' ] ← ∇²f*( [ κ ] ) [ τ' ]
-#     [ X' ]       ( [ Z ] ) [ X' ]
+#     [ x' ]       ( [ z ] ) [ x' ]
 #
 # where Z = LLᵀ and
 #
 #     [ κ ] = -∇f ( [ τ ] )
-#     [ Z ]       ( [ X ] )
+#     [ z ]       ( [ x ] )
 #
 #     [ τ ] = -∇f*( [ κ ] )
-#     [ X ]       ( [ Z ] )
+#     [ x ]       ( [ x ] )
 #
 function hessian!(
         space::Workspace{T, J},

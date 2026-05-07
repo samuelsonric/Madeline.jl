@@ -31,19 +31,16 @@
 #
 # We then construct a homogeneous self-dual embedding:
 #
-#          find        [ τ ] [ κ ]
-#                      [ x ] [ z ] [ y ]
+#          find        (y, τ, x, κ, z)
 #
-#          subject to  [ -b A ] [ τ ] = 0
-#                               [ x ]
-#
-#                      [ 0 -cᵀ] [ τ ] - [ -bᵀ ] y = [ κ ]
-#                      [ c  0 ] [ x ]   [  Aᵀ ]     [ z ]
+#          subject to  [    -b  A  ] [ y ]   [   ]
+#                      [ bᵀ    -cᵀ ] [ τ ] = [ κ ]
+#                      [-Aᵀ  c     ] [ x ]   [ z ]
 #
 #                      [ τ ] ∈ ℝ⁺ × K
 #                      [ x ]
 #
-#                      [ κ ] ∈ R⁺ × K*
+#                      [ κ ] ∈ ℝ⁺ × K*
 #                      [ z ]
 #
 # and solve it using Skajaa and Ye's nonsymmetric interior
@@ -348,9 +345,9 @@ end
 
 # solve the KKT system
 #
-#    [  0   -b     Aᵀ    ] [ dy ]   [ y'      ]
-#    [ -bᵀ -μτ⁻²  -⟨C,·⟩ ] [ dτ ] = [ κ' - τ' ]
-#    [  A    C    -μH    ] [ dX ]   [ Z' - X' ]
+#    [  0   -b     Aᵀ ] [ dy ]   [ y' ]   [    ]
+#    [ -bᵀ -μτ⁻²  -cᵀ ] [ dτ ] = [ κ' ] - [ τ' ]
+#    [  A    c    -μH ] [ dx ]   [ z' ]   [ x' ]
 #
 function solve_newton!(
         space::Workspace{T, J},
