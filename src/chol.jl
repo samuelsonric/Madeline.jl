@@ -19,15 +19,17 @@ function factorize!(chol::Chol{T}) where {T}
     return chol
 end
 
-function ldiv_fwd!(chol::Chol, b::AbstractVector)
-    @inbounds for i in eachindex(b)
+function ldiv_fwd!(chol::Chol{T}, b::AbstractVector{T}) where {T}
+    @inbounds for i in 1:chol.rank
         chol.temp[i] = b[chol.perm[i]]
     end
 
-    copyto!(b, chol.temp)
+    @inbounds for i in 1:chol.rank
+        b[i] = chol.temp[i]
+    end
 
-    @inbounds for i in chol.rank+1:length(b)
-        b[i] = zero(eltype(b))
+    @inbounds for i in chol.rank + 1:length(b)
+        b[i] = zero(T)
     end
 
     if ispositive(chol.rank)
@@ -49,7 +51,7 @@ function ldiv_fwd!(chol::Chol{T}, B::AbstractMatrix{T}) where {T}
             B[i, j] = chol.temp[i]
         end
 
-        for i in chol.rank+1:size(B, 1)
+        for i in chol.rank + 1:size(B, 1)
             B[i, j] = zero(T)
         end
     end
