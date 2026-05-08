@@ -114,17 +114,20 @@ function build_gram!(cache::KKT, A::SparseMatrixCSC{T, I}) where {T, I}
     return
 end
 
-function hessian_sparse!(
-        H::AbstractMatrix{T},
-        A::SparseMatrixCSC{T, I},
-        V::AbstractMatrix{T},
-        idxmap::AbstractVector{I},
-        b::AbstractVector{T},
+function build_schur_sparse_impl!(
+        cache::KKT{T, I},
+        problem::Problem{T, I},
         ω::T,
-        k::I,
     ) where {T, I}
+    H = cache.chol.L
+    V = cache.V
+    A = problem.A
+    b = problem.b
+    k = problem.k
+    idxmap = cache.idxmap
+
     n = convert(I, isqrt(size(A, 1)))
-    m = convert(I, size(A, 2))
+    m = convert(I,       size(A, 2))
 
     @inbounds for cj in k + one(I):m
         for ci in cj:m
@@ -187,7 +190,7 @@ function build_schur_sparse!(
     div_impl!(cache.U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO))
     syrk!(Val(:L), Val(:T), one(T), cache.U, zero(T), cache.V)
     symmtri!(cache.V, Val(:L))
-    hessian_sparse!(cache.chol.L, problem.A, cache.V, cache.idxmap, problem.b, ω, problem.k)
+    build_schur_sparse_impl!(cache, problem, ω)
     return
 end
 
