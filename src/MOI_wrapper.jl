@@ -126,7 +126,7 @@ MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 const _SUPPORTED_ATTRS = (
     "rel_opt", "abs_opt", "feas", "infeas", "tau_infeas",
     "illposed", "slow", "near_factor", "iter_limit", "prox_bound",
-    "scaling", "verbose",
+    "scaling", "equilibration", "verbose",
 )
 
 function MOI.supports(::Optimizer, attr::MOI.RawOptimizerAttribute)
@@ -136,29 +136,31 @@ end
 function MOI.set(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute, value)
     name = attr.name
     if name == "rel_opt"
-        optimizer.settings = Settings(; rel_opt=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., rel_opt=Float64(value))
     elseif name == "abs_opt"
-        optimizer.settings = Settings(; abs_opt=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., abs_opt=Float64(value))
     elseif name == "feas"
-        optimizer.settings = Settings(; feas=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., feas=Float64(value))
     elseif name == "infeas"
-        optimizer.settings = Settings(; infeas=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., infeas=Float64(value))
     elseif name == "tau_infeas"
-        optimizer.settings = Settings(; tau_infeas=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., tau_infeas=Float64(value))
     elseif name == "illposed"
-        optimizer.settings = Settings(; illposed=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., illposed=Float64(value))
     elseif name == "slow"
-        optimizer.settings = Settings(; slow=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., slow=Float64(value))
     elseif name == "near_factor"
-        optimizer.settings = Settings(; near_factor=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., near_factor=Float64(value))
     elseif name == "iter_limit"
-        optimizer.settings = Settings(; iter_limit=Int(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., iter_limit=Int(value))
     elseif name == "prox_bound"
-        optimizer.settings = Settings(; prox_bound=Float64(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., prox_bound=Float64(value))
     elseif name == "scaling"
-        optimizer.settings = Settings(; scaling=Bool(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., scaling=Bool(value))
+    elseif name == "equilibration"
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., equilibration=Bool(value))
     elseif name == "verbose"
-        optimizer.settings = Settings(; verbose=Bool(value), _copy_settings(optimizer.settings)...)
+        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., verbose=Bool(value))
     else
         throw(MOI.UnsupportedAttribute(attr))
     end
@@ -189,6 +191,8 @@ function MOI.get(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute)
         return optimizer.settings.prox_bound
     elseif name == "scaling"
         return optimizer.settings.scaling
+    elseif name == "equilibration"
+        return optimizer.settings.equilibration
     elseif name == "verbose"
         return optimizer.settings.verbose
     else
@@ -209,6 +213,7 @@ function _copy_settings(s::Settings)
         iter_limit = s.iter_limit,
         prox_bound = s.prox_bound,
         scaling = s.scaling,
+        equilibration = s.equilibration,
         verbose = s.verbose,
     )
 end
@@ -415,9 +420,13 @@ function _optimize!(dest::Optimizer, src::OptimizerCache)
     dest.zeros_cones = deepcopy(Ab.sets)
     dest._C, dest._A, dest._b = C, A, copy(b)
 
-    # Solve with equilibration
+    # Solve
     problem = Problem(Hermitian(C, :L), A, b)
-    dest.equil = equilibrate!(problem)
+    if dest.settings.equilibration
+        dest.equil = equilibrate!(problem)
+    else
+        dest.equil = EquilibrationResult{Float64}(m)
+    end
     settings = Settings(
         rel_opt = dest.settings.rel_opt,
         abs_opt = dest.settings.abs_opt,
@@ -430,6 +439,7 @@ function _optimize!(dest::Optimizer, src::OptimizerCache)
         iter_limit = dest.settings.iter_limit,
         prox_bound = dest.settings.prox_bound,
         scaling = dest.settings.scaling,
+        equilibration = dest.settings.equilibration,
         verbose = !dest.silent,
     )
     dest.result = solve(problem; settings)

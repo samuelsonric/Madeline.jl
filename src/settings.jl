@@ -10,6 +10,7 @@
     iter_limit::Int = 1000
     prox_bound::T   = T(0.99)
     scaling::Bool   = true
+    equilibration::Bool = true
     verbose::Bool   = true
 end
 
