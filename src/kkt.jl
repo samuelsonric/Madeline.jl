@@ -114,7 +114,7 @@ function build_gram!(cache::KKT, A::SparseMatrixCSC{T, I}) where {T, I}
     return
 end
 
-function build_schur_sparse_impl!(
+function st_build_schur_sparse_impl!(
         cache::KKT{T, I},
         problem::Problem{T, I},
         ω::T,
@@ -130,12 +130,15 @@ function build_schur_sparse_impl!(
     m = convert(I,       size(A, 2))
 
     @inbounds for cj in k + one(I):m
+        bj = b[cj]
+
         for ci in cj:m
-            H[ci, cj] = ω * b[ci] * b[cj]
+            H[ci, cj] = ω * b[ci] * bj
         end
     end
 
     @inbounds for cj in k + one(I):m
+        bj = b[cj]
         for pj in nzrange(A, cj)
             xj, yj = cart(n, rowvals(A)[pj])
 
@@ -171,10 +174,74 @@ function build_schur_sparse_impl!(
         end
     end
 
-    return H
+    return
 end
 
-function build_schur_sparse!(
+function mt_build_schur_sparse_impl!(
+        cache::KKT{T, I},
+        problem::Problem{T, I},
+        ω::T,
+    ) where {T, I}
+    H = cache.chol.L
+    V = cache.V
+    A = problem.A
+    b = problem.b
+    k = problem.k
+    idxmap = cache.idxmap
+
+    n = convert(I, isqrt(size(A, 1)))
+    m = convert(I,       size(A, 2))
+
+    @inbounds @threads for cj in k + one(I):m
+        bj = b[cj]
+
+        for ci in cj:m
+            H[ci, cj] = ω * b[ci] * bj
+        end
+    end
+
+    @inbounds @threads for cj in k + one(I):m
+        bj = b[cj]
+
+        for pj in nzrange(A, cj)
+            xj, yj = cart(n, rowvals(A)[pj])
+
+            αj = nonzeros(A)[pj]
+
+            if xj != yj
+                αj *= two(T)
+            end
+
+            xv = idxmap[xj]
+            yv = idxmap[yj]
+
+            for ci in cj:m
+                Δij = zero(T)
+
+                for pi in nzrange(A, ci)
+                    xi, yi = cart(n, rowvals(A)[pi])
+
+                    αi = nonzeros(A)[pi]
+
+                    xu = idxmap[xi]
+                    yu = idxmap[yi]
+
+                    Δij += αi * V[xu, xv] * V[yu, yv]
+
+                    if xi != yi
+                        Δij += αi * V[yu, xv] * V[xu, yv]
+                    end
+                end
+
+                H[ci, cj] += Δij * αj
+            end
+        end
+    end
+
+    return
+end
+
+function st_build_schur_sparse!(
         space::Workspace{T, J},
         cache::KKT{T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
@@ -190,7 +257,47 @@ function build_schur_sparse!(
     div_impl!(cache.U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO))
     syrk!(Val(:L), Val(:T), one(T), cache.U, zero(T), cache.V)
     symmtri!(cache.V, Val(:L))
-    build_schur_sparse_impl!(cache, problem, ω)
+    st_build_schur_sparse_impl!(cache, problem, ω)
+    return
+end
+
+function mt_build_schur_sparse!(
+        space::Workspace{T, J},
+        cache::KKT{T, J},
+        L::ChordalTriangular{:N, UPLO, T, J},
+        problem::Problem{T, J},
+        ω::T,
+    ) where {UPLO, T, J}
+    nrhs = convert(J, size(cache.U, 2))
+    nt = convert(J, nthreads())
+    bs = max(J(32), div(nrhs, 4nt))
+
+    fill!(cache.U, zero(T))
+
+    for k in axes(cache.U, 2)
+        cache.U[cache.indices[k], k] = one(T)
+    end
+
+    mt_div_impl!(cache.U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), bs, nt)
+    syrk!(Val(:L), Val(:T), one(T), cache.U, zero(T), cache.V)
+    symmtri!(cache.V, Val(:L))
+    mt_build_schur_sparse_impl!(cache, problem, ω)
+    return
+end
+
+function build_schur_sparse!(
+        space::Workspace{T, J},
+        cache::KKT{T, J},
+        L::ChordalTriangular{:N, UPLO, T, J},
+        problem::Problem{T, J},
+        ω::T,
+    ) where {UPLO, T, J}
+    if nthreads() > 1
+        mt_build_schur_sparse!(space, cache, L, problem, ω)
+    else
+        st_build_schur_sparse!(space, cache, L, problem, ω)
+    end
+
     return
 end
 
