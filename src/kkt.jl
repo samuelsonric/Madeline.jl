@@ -139,6 +139,7 @@ function st_build_schur_sparse_impl!(
 
     @inbounds for cj in k + one(I):m
         bj = b[cj]
+
         for pj in nzrange(A, cj)
             xj, yj = cart(n, rowvals(A)[pj])
 
