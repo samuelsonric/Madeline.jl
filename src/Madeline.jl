@@ -8,6 +8,7 @@ using Printf
 using CommonSolve: CommonSolve, init, solve, solve!, step!
 using Base.Threads: @threads, nthreads
 
+using CliqueTrees: FBipartiteGraph, pointers, targets, neighbors
 using CliqueTrees.Multifrontal
 using CliqueTrees.Multifrontal: HermOrSym, HermOrSymTri, HermOrSymSparse, HermTri, ChordalTriangular, FChordalTriangular, Permutation
 using CliqueTrees.Multifrontal: FVector, FScalar, FMatrix, FPermutation, ChordalSymbolic

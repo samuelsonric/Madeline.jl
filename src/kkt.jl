@@ -18,6 +18,7 @@ struct KKT{T, I}
     V::FMatrix{T}                             # W^T W for sparse constraints (nrhs × nrhs)
     indices::FVector{I}                       # touched indices
     idxmap::FVector{I}                        # index map
+    mark::FVector{I}                          # mark array for constraint graph iteration
 end
 
 function touched(A::SparseMatrixCSC{T, I}, k::I) where {T, I}
@@ -63,7 +64,8 @@ function KKT{T}(problem::Problem{T, I}) where {T, I}
     γ = FVector{T}(undef, 2)
     U = FMatrix{T}(undef, n, nrhs)
     V = FMatrix{T}(undef, nrhs, nrhs)
-    return KKT{T, I}(chol, Γ, Σ, γ, U, V, indices, idxmap)
+    mark = FVector{I}(undef, m)
+    return KKT{T, I}(chol, Γ, Σ, γ, U, V, indices, idxmap, mark)
 end
 
 # ===== Schur complement =====
@@ -117,60 +119,61 @@ end
 function st_build_schur_sparse_impl!(
         cache::KKT{T, I},
         problem::Problem{T, I},
-        ω::T,
     ) where {T, I}
     H = cache.chol.L
     V = cache.V
     A = problem.A
-    b = problem.b
     k = problem.k
     idxmap = cache.idxmap
+    mark = cache.mark
+    col_to_cmp = problem.col_to_cmp
+    cmp_to_col = problem.cmp_to_col
 
     n = convert(I, isqrt(size(A, 1)))
     m = convert(I,       size(A, 2))
 
     @inbounds for cj in k + one(I):m
-        bj = b[cj]
+        for kj in neighbors(col_to_cmp, cj)
+            for ci in neighbors(cmp_to_col, kj)
+                if ci >= cj && mark[ci] != cj
+                    mark[ci] = cj
 
-        for ci in cj:m
-            H[ci, cj] = ω * b[ci] * bj
-        end
-    end
+                    Hij = zero(T)
 
-    @inbounds for cj in k + one(I):m
-        bj = b[cj]
+                    for pj in nzrange(A, cj)
+                        xj, yj = cart(n, rowvals(A)[pj])
 
-        for pj in nzrange(A, cj)
-            xj, yj = cart(n, rowvals(A)[pj])
+                        αj = nonzeros(A)[pj]
 
-            αj = nonzeros(A)[pj]
+                        if xj != yj
+                            αj *= two(T)
+                        end
 
-            if xj != yj
-                αj *= two(T)
-            end
+                        xv = idxmap[xj]
+                        yv = idxmap[yj]
 
-            xv = idxmap[xj]
-            yv = idxmap[yj]
+                        Δij = zero(T)
 
-            for ci in cj:m
-                Δij = zero(T)
+                        for pi in nzrange(A, ci)
+                            xi, yi = cart(n, rowvals(A)[pi])
 
-                for pi in nzrange(A, ci)
-                    xi, yi = cart(n, rowvals(A)[pi])
+                            αi = nonzeros(A)[pi]
 
-                    αi = nonzeros(A)[pi]
+                            xu = idxmap[xi]
+                            yu = idxmap[yi]
 
-                    xu = idxmap[xi]
-                    yu = idxmap[yi]
+                            Δij += αi * V[xu, xv] * V[yu, yv]
 
-                    Δij += αi * V[xu, xv] * V[yu, yv]
+                            if xi != yi
+                                Δij += αi * V[yu, xv] * V[xu, yv]
+                            end
+                        end
 
-                    if xi != yi
-                        Δij += αi * V[yu, xv] * V[xu, yv]
+                        Hij += Δij * αj
                     end
-                end
 
-                H[ci, cj] += Δij * αj
+                    H[ci, cj] = Hij
+                end
             end
         end
     end
@@ -181,12 +184,10 @@ end
 function mt_build_schur_sparse_impl!(
         cache::KKT{T, I},
         problem::Problem{T, I},
-        ω::T,
     ) where {T, I}
     H = cache.chol.L
     V = cache.V
     A = problem.A
-    b = problem.b
     k = problem.k
     idxmap = cache.idxmap
 
@@ -194,16 +195,6 @@ function mt_build_schur_sparse_impl!(
     m = convert(I,       size(A, 2))
 
     @inbounds @threads for cj in k + one(I):m
-        bj = b[cj]
-
-        for ci in cj:m
-            H[ci, cj] = ω * b[ci] * bj
-        end
-    end
-
-    @inbounds @threads for cj in k + one(I):m
-        bj = b[cj]
-
         for pj in nzrange(A, cj)
             xj, yj = cart(n, rowvals(A)[pj])
 
@@ -247,7 +238,6 @@ function st_build_schur_sparse!(
         cache::KKT{T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
-        ω::T,
     ) where {UPLO, T, J}
     fill!(cache.U, zero(T))
 
@@ -258,7 +248,7 @@ function st_build_schur_sparse!(
     div_impl!(cache.U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO))
     syrk!(Val(:L), Val(:T), one(T), cache.U, zero(T), cache.V)
     symmtri!(cache.V, Val(:L))
-    st_build_schur_sparse_impl!(cache, problem, ω)
+    st_build_schur_sparse_impl!(cache, problem)
     return
 end
 
@@ -267,7 +257,6 @@ function mt_build_schur_sparse!(
         cache::KKT{T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
-        ω::T,
     ) where {UPLO, T, J}
     nrhs = convert(J, size(cache.U, 2))
     nt = convert(J, nthreads())
@@ -282,7 +271,7 @@ function mt_build_schur_sparse!(
     mt_div_impl!(cache.U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), bs, nt)
     syrk!(Val(:L), Val(:T), one(T), cache.U, zero(T), cache.V)
     symmtri!(cache.V, Val(:L))
-    mt_build_schur_sparse_impl!(cache, problem, ω)
+    mt_build_schur_sparse_impl!(cache, problem)
     return
 end
 
@@ -291,12 +280,11 @@ function build_schur_sparse!(
         cache::KKT{T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
-        ω::T,
     ) where {UPLO, T, J}
     if nthreads() > 1
-        mt_build_schur_sparse!(space, cache, L, problem, ω)
+        mt_build_schur_sparse!(space, cache, L, problem)
     else
-        st_build_schur_sparse!(space, cache, L, problem, ω)
+        st_build_schur_sparse!(space, cache, L, problem)
     end
 
     return
@@ -310,19 +298,42 @@ function build_schur!(
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
     ) where {UPLO, T, J}
-    m = size(cache.chol.L, 1)
+    H = cache.chol.L
+    m = size(H, 1)
+    mark = cache.mark
+    col_to_cmp = problem.col_to_cmp
+    cmp_to_col = problem.cmp_to_col
 
-    for i in oneto(problem.k)
-        copytopacked!(w, problem.A, problem.indices_primal, problem.b, i)
+    fill!(H, zero(T))
+    fill!(mark, zero(J))
+
+    for j in oneto(problem.k)
+        copytopacked!(w, problem.A, problem.indices_primal, problem.b, j)
         hessian!(space, L, x, w, Val(false))
 
-        for j in i:m
-            cache.chol.L[j, i] = dotpacked(w, problem.A, problem.indices_primal, problem.b, j)
+        for kj in neighbors(col_to_cmp, j)
+            for i in neighbors(cmp_to_col, kj)
+                if i >= j && mark[i] != j
+                    mark[i] = j
+                    cache.chol.L[i, j] = dotpacked(w, problem.A, problem.indices_primal, problem.b, i)
+                end
+            end
         end
     end
 
     if problem.k < m
-        build_schur_sparse!(space, cache, L, problem, x.τ^2)
+        build_schur_sparse!(space, cache, L, problem)
+    end
+
+    ω = x.τ^2
+    b = problem.b
+
+    @inbounds for j in oneto(m)
+        bj = ω * b[j]
+
+        for i in j:m
+            H[i, j] += b[i] * bj
+        end
     end
 
     factorize!(cache.chol)

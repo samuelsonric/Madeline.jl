@@ -1,5 +1,89 @@
 # ===== Problem data type =====
 
+function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where {T, I}
+    m = convert(I, size(A, 2))
+    n = convert(I, ncl(S))
+    k = zero(I)
+
+    cmp = FVector{I}(undef, nfr(S))
+
+    for i in reverse(fronts(S))
+        j = S.pnt[i]
+
+        if iszero(j)
+            cmp[i] = k += one(I)
+        else
+            cmp[i] = cmp[j]
+        end
+    end
+
+    mark = FVector{I}(undef, k)
+    fill!(mark, zero(I))
+
+    p = zero(I)
+
+    for c in oneto(m)
+        jprv = zero(I)
+
+        for q in nzrange(A, c)
+            i, j = cart(n, rowvals(A)[q])
+
+            r = cmp[S.idx[i]]
+
+            if mark[r] != -c
+                mark[r] = -c
+                p += one(I)
+            end
+
+            if j != jprv
+                r = cmp[S.idx[j]]
+
+                if mark[r] != -c
+                    mark[r] = -c
+                    p += one(I)
+                end
+            end
+
+            jprv = j
+        end
+    end
+
+    graph = FBipartiteGraph{I, I}(k, m, p)
+
+    p = zero(I)
+
+    for c in oneto(m)
+        pointers(graph)[c] = p + one(I)
+
+        jprv = zero(I)
+
+        for q in nzrange(A, c)
+            i, j = cart(n, rowvals(A)[q])
+
+            r = cmp[S.idx[i]]
+
+            if mark[r] != c
+                mark[r] = c
+                p += one(I); targets(graph)[p] = r
+            end
+
+            if j != jprv
+                r = cmp[S.idx[j]]
+
+                if mark[r] != c
+                    mark[r] = c
+                    p += one(I); targets(graph)[p] = r
+                end
+            end
+
+            jprv = j
+        end
+    end
+
+    pointers(graph)[m + one(I)] = p + one(I)
+    return graph
+end
+
 struct Problem{T, I}
     G::SparseMatrixCSC{T, I}
     C::SparseMatrixCSC{T, I}
@@ -11,6 +95,8 @@ struct Problem{T, I}
     S::ChordalSymbolic{I}
     indices_primal::FVector{I}
     indices_slack::FVector{I}
+    col_to_cmp::FBipartiteGraph{I, I}
+    cmp_to_col::FBipartiteGraph{I, I}
 end
 
 function Problem(
@@ -34,8 +120,10 @@ function Problem(
 
     indices_primal = compute_indices_primal(S, Ap)
     indices_slack = compute_indices_slack(Gp, Ap)
+    col_to_cmp = constraint_graph(S, Ap)
+    cmp_to_col = reverse(col_to_cmp)
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack)
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, col_to_cmp, cmp_to_col)
 end
 
 function Problem(
@@ -61,6 +149,8 @@ function Base.copy(problem::Problem)
         problem.S,
         problem.indices_primal,
         problem.indices_slack,
+        problem.col_to_cmp,
+        problem.cmp_to_col,
     )
 end
 
