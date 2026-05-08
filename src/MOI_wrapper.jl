@@ -122,6 +122,97 @@ end
 
 MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 
+# RawOptimizerAttribute support for all settings
+const _SUPPORTED_ATTRS = (
+    "rel_opt", "abs_opt", "feas", "infeas", "tau_infeas",
+    "illposed", "slow", "near_factor", "iter_limit", "prox_bound",
+    "scaling", "verbose",
+)
+
+function MOI.supports(::Optimizer, attr::MOI.RawOptimizerAttribute)
+    return attr.name in _SUPPORTED_ATTRS
+end
+
+function MOI.set(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute, value)
+    name = attr.name
+    if name == "rel_opt"
+        optimizer.settings = Settings(; rel_opt=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "abs_opt"
+        optimizer.settings = Settings(; abs_opt=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "feas"
+        optimizer.settings = Settings(; feas=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "infeas"
+        optimizer.settings = Settings(; infeas=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "tau_infeas"
+        optimizer.settings = Settings(; tau_infeas=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "illposed"
+        optimizer.settings = Settings(; illposed=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "slow"
+        optimizer.settings = Settings(; slow=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "near_factor"
+        optimizer.settings = Settings(; near_factor=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "iter_limit"
+        optimizer.settings = Settings(; iter_limit=Int(value), _copy_settings(optimizer.settings)...)
+    elseif name == "prox_bound"
+        optimizer.settings = Settings(; prox_bound=Float64(value), _copy_settings(optimizer.settings)...)
+    elseif name == "scaling"
+        optimizer.settings = Settings(; scaling=Bool(value), _copy_settings(optimizer.settings)...)
+    elseif name == "verbose"
+        optimizer.settings = Settings(; verbose=Bool(value), _copy_settings(optimizer.settings)...)
+    else
+        throw(MOI.UnsupportedAttribute(attr))
+    end
+    return
+end
+
+function MOI.get(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute)
+    name = attr.name
+    if name == "rel_opt"
+        return optimizer.settings.rel_opt
+    elseif name == "abs_opt"
+        return optimizer.settings.abs_opt
+    elseif name == "feas"
+        return optimizer.settings.feas
+    elseif name == "infeas"
+        return optimizer.settings.infeas
+    elseif name == "tau_infeas"
+        return optimizer.settings.tau_infeas
+    elseif name == "illposed"
+        return optimizer.settings.illposed
+    elseif name == "slow"
+        return optimizer.settings.slow
+    elseif name == "near_factor"
+        return optimizer.settings.near_factor
+    elseif name == "iter_limit"
+        return optimizer.settings.iter_limit
+    elseif name == "prox_bound"
+        return optimizer.settings.prox_bound
+    elseif name == "scaling"
+        return optimizer.settings.scaling
+    elseif name == "verbose"
+        return optimizer.settings.verbose
+    else
+        throw(MOI.UnsupportedAttribute(attr))
+    end
+end
+
+function _copy_settings(s::Settings)
+    return (
+        rel_opt = s.rel_opt,
+        abs_opt = s.abs_opt,
+        feas = s.feas,
+        infeas = s.infeas,
+        tau_infeas = s.tau_infeas,
+        illposed = s.illposed,
+        slow = s.slow,
+        near_factor = s.near_factor,
+        iter_limit = s.iter_limit,
+        prox_bound = s.prox_bound,
+        scaling = s.scaling,
+        verbose = s.verbose,
+    )
+end
+
 function MOI.is_empty(optimizer::Optimizer)
     return optimizer.result === nothing &&
            isempty(optimizer.block_dims) &&
