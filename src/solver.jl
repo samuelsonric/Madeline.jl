@@ -394,6 +394,16 @@ function linesearch_combined!(
         μ = dot(p, q) / (n + 1)
         ispositive(μ) || continue
 
+        ρ = (p.τ * q.τ) / μ
+        ρ < 0.01 && continue
+        ρ < one(T) - prox_bound && continue
+        ρ > one(T) + prox_bound && continue
+
+        σ = symdot(p.X, q.X) / (μ * n)
+        σ < 0.01 && continue
+        σ < one(T) - prox_bound / sqrt(n) && continue
+        σ > one(T) + prox_bound / sqrt(n) && continue
+
         factorize!(space, L, q, flip(scaling)) || continue
         factorize!(space, L, p, scaling) || continue
 
