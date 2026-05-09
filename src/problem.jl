@@ -1,5 +1,46 @@
 # ===== Problem data type =====
 
+function trilinegraph(ve::FBipartiteGraph{V, E}, ev::FBipartiteGraph{V, E}) where {V, E}
+    n = nv(ve)
+    m = zero(E)
+    marker = FVector{V}(undef, n)
+
+    @inbounds for v in vertices(ve)
+        marker[v] = zero(V)
+    end
+
+    @inbounds for v in vertices(ve)
+        tag = v
+
+        for w in neighbors(ve, v), x in neighbors(ev, w)
+            if x > v && marker[x] < tag
+                marker[x] = tag
+                m += one(E)
+            end
+        end
+    end
+
+    target = FVector{E}(undef, m)
+    pointer = FVector{V}(undef, n + one(V))
+    @inbounds pointer[one(V)] = p = one(E)
+
+    @inbounds for v in vertices(ve)
+        tag = n + v
+
+        for w in neighbors(ve, v), x in neighbors(ev, w)
+            if x > v && marker[x] < tag
+                marker[x] = tag
+                target[p] = x
+                p += one(E)
+            end
+        end
+
+        pointer[v + one(V)] = p
+    end
+
+    return FBipartiteGraph{V, E}(n, n, m, pointer, target)
+end
+
 function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where {T, I}
     m = convert(I, size(A, 2))
     n = convert(I, ncl(S))
@@ -81,7 +122,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
     end
 
     pointers(graph)[m + one(I)] = p + one(I)
-    return graph
+    return trilinegraph(graph, reverse(graph))
 end
 
 struct Problem{T, I}
@@ -95,8 +136,7 @@ struct Problem{T, I}
     S::ChordalSymbolic{I}
     indices_primal::FVector{I}
     indices_slack::FVector{I}
-    col_to_cmp::FBipartiteGraph{I, I}
-    cmp_to_col::FBipartiteGraph{I, I}
+    cgraph::FBipartiteGraph{I, I}
 end
 
 function Problem(
@@ -120,10 +160,9 @@ function Problem(
 
     indices_primal = compute_indices_primal(S, Ap)
     indices_slack = compute_indices_slack(Gp, Ap)
-    col_to_cmp = constraint_graph(S, Ap)
-    cmp_to_col = reverse(col_to_cmp)
+    cgraph = constraint_graph(S, Ap)
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, col_to_cmp, cmp_to_col)
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph)
 end
 
 function Problem(
@@ -149,8 +188,7 @@ function Base.copy(problem::Problem)
         problem.S,
         problem.indices_primal,
         problem.indices_slack,
-        problem.col_to_cmp,
-        problem.cmp_to_col,
+        problem.cgraph,
     )
 end
 
