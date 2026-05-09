@@ -215,7 +215,7 @@ function build_schur_sparse!(
         cache.U[problem.idxfwd[k], k] = one(T)
     end
 
-    for c in oneto(problem.ncc)
+    @timeit TIMER "process_cc" for c in oneto(problem.ncc)
         lo = problem.idxptr[c]
         hi = problem.idxptr[c + one(J)] - one(J)
         lo > hi && continue
@@ -225,7 +225,7 @@ function build_schur_sparse!(
         process_cc!(space, cache, L, lo, hi, fdsc, root)
     end
 
-    build_schur_sparse_impl!(cache, problem)
+    @timeit TIMER "schur_impl" build_schur_sparse_impl!(cache, problem)
     return
 end
 
@@ -243,7 +243,7 @@ function build_schur!(
 
     fill!(H, zero(T))
 
-    for j in oneto(problem.k)
+    @timeit TIMER "dense_schur" for j in oneto(problem.k)
         copytopacked!(w, problem.A, problem.indices_primal, problem.b, j)
         hessian!(space, L, x, w, Val(false))
 
@@ -255,13 +255,13 @@ function build_schur!(
     end
 
     if problem.k < m
-        build_schur_sparse!(space, cache, L, problem)
+        @timeit TIMER "sparse_schur" build_schur_sparse!(space, cache, L, problem)
     end
 
     ω = x.τ^2
     b = problem.b
 
-    @inbounds for j in oneto(m)
+    @timeit TIMER "b_outer" @inbounds for j in oneto(m)
         bj = ω * b[j]
 
         for i in j:m
@@ -269,7 +269,7 @@ function build_schur!(
         end
     end
 
-    factorize!(cache.chol)
+    @timeit TIMER "chol_factor" factorize!(cache.chol)
     return
 end
 

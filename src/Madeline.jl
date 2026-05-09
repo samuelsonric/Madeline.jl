@@ -1,5 +1,8 @@
 module Madeline
 
+using TimerOutputs
+const TIMER = TimerOutput()
+
 using LinearAlgebra
 using LinearAlgebra: dot, norm, tr, axpy!, axpby!, ldiv!, lmul!, rmul!, Hermitian, I, mul!
 using LinearAlgebra.BLAS: BlasInt
