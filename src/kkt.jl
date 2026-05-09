@@ -80,7 +80,7 @@ function build_gram!(cache::KKT, A::SparseMatrixCSC{T, I}) where {T, I}
     return
 end
 
-function schur_entry!(
+function schur_entry_cc!(
         H::FMatrix{T},
         V::FMatrix{T},
         A::SparseMatrixCSC{T, I},
@@ -88,15 +88,27 @@ function schur_entry!(
         frnt_to_cc::FVector{I},
         idx::FVector{I},
         n::I,
+        cc::I,
         ci::I,
         cj::I,
+        pistrt::I,
+        pjstrt::I,
     ) where {T, I}
+    colptr = A.colptr
+    rowval = rowvals(A)
+    nzval = nonzeros(A)
+
+    pistop = colptr[ci + one(I)] - one(I)
+    pjstop = colptr[cj + one(I)] - one(I)
+
     Hij = zero(T)
 
-    @inbounds for pj in nzrange(A, cj)
-        xj, yj = cart(n, rowvals(A)[pj])
+    @inbounds for pj in pjstrt:pjstop
+        xj, yj = cart(n, rowval[pj])
 
-        αj = nonzeros(A)[pj]
+        frnt_to_cc[idx[yj]] != cc && break
+
+        αj = nzval[pj]
 
         if xj != yj
             αj *= two(T)
@@ -104,35 +116,30 @@ function schur_entry!(
 
         xv = idxbwd[xj]
         yv = idxbwd[yj]
-        cv = frnt_to_cc[idx[yj]]
 
         Δij = zero(T)
 
-        for pi in nzrange(A, ci)
-            xi, yi = cart(n, rowvals(A)[pi])
+        for pi in pistrt:pistop
+            xi, yi = cart(n, rowval[pi])
 
-            cu = frnt_to_cc[idx[yi]]
+            frnt_to_cc[idx[yi]] != cc && break
 
-            if cu == cv
-                αi = nonzeros(A)[pi]
+            αi = nzval[pi]
 
-                xu = idxbwd[xi]
-                yu = idxbwd[yi]
+            xu = idxbwd[xi]
+            yu = idxbwd[yi]
 
-                Δij += αi * V[xu, xv] * V[yu, yv]
+            Δij += αi * V[xu, xv] * V[yu, yv]
 
-                if xi != yi
-                    Δij += αi * V[yu, xv] * V[xu, yv]
-                end
-            elseif cu > cv
-                break
+            if xi != yi
+                Δij += αi * V[yu, xv] * V[xu, yv]
             end
         end
 
         Hij += Δij * αj
     end
 
-    H[ci, cj] = Hij
+    H[ci, cj] += Hij
     return
 end
 
@@ -147,16 +154,31 @@ function build_schur_sparse_impl!(
     idxbwd = problem.idxbwd
     frnt_to_cc = problem.frnt_to_cc
     idx = problem.S.idx
-    cgraph = problem.cgraph
+    cc_to_cons = problem.cc_to_cons
+    cc_to_pntr = problem.cc_to_pntr
 
     n = convert(I, isqrt(size(A, 1)))
-    m = convert(I,       size(A, 2))
 
-    @inbounds for cj in k + one(I):m
-        schur_entry!(H, V, A, idxbwd, frnt_to_cc, idx, n, cj, cj)
+    @inbounds for cc in oneto(problem.ncc)
+        lo = pointers(cc_to_cons)[cc]
+        hi = pointers(cc_to_cons)[cc + one(I)] - one(I)
 
-        for ci in neighbors(cgraph, cj)
-            schur_entry!(H, V, A, idxbwd, frnt_to_cc, idx, n, ci, cj)
+        for kj in lo:hi
+            cj = targets(cc_to_cons)[kj]
+            cj <= k && continue
+
+            pjstrt = targets(cc_to_pntr)[kj]
+
+            schur_entry_cc!(H, V, A, idxbwd, frnt_to_cc, idx, n, cc, cj, cj, pjstrt, pjstrt)
+
+            for ki in kj + one(I):hi
+                ci = targets(cc_to_cons)[ki]
+                ci <= k && continue
+
+                pistrt = targets(cc_to_pntr)[ki]
+
+                schur_entry_cc!(H, V, A, idxbwd, frnt_to_cc, idx, n, cc, ci, cj, pistrt, pjstrt)
+            end
         end
     end
 

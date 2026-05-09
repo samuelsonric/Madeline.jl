@@ -155,72 +155,81 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
 
     frnt_to_cc, frtptr, ncc = connected_components(S)
 
-    mark = FVector{I}(undef, ncc)
-    fill!(mark, zero(I))
-
     p = zero(I)
 
     for c in oneto(m)
-        jprv = zero(I)
+        rprv = zero(I)
 
         for q in nzrange(A, c)
             i, j = cart(n, rowvals(A)[q])
 
-            r = frnt_to_cc[S.idx[i]]
+            r = frnt_to_cc[S.idx[j]]
 
-            if mark[r] != -c
-                mark[r] = -c
+            if r != rprv
                 p += one(I)
             end
 
-            if j != jprv
-                r = frnt_to_cc[S.idx[j]]
-
-                if mark[r] != -c
-                    mark[r] = -c
-                    p += one(I)
-                end
-            end
-
-            jprv = j
+            rprv = r
         end
     end
 
-    graph = FBipartiteGraph{I, I}(ncc, m, p)
+    cons_to_cc = FBipartiteGraph{I, I}(ncc, m, p)
+    cc_to_pntr = FBipartiteGraph{I, I}(nnz(A), ncc, p)
 
     p = zero(I)
 
     for c in oneto(m)
-        pointers(graph)[c] = p + one(I)
+        pointers(cons_to_cc)[c] = p + one(I)
 
-        jprv = zero(I)
+        rprv = zero(I)
 
         for q in nzrange(A, c)
             i, j = cart(n, rowvals(A)[q])
 
-            r = frnt_to_cc[S.idx[i]]
+            r = frnt_to_cc[S.idx[j]]
 
-            if mark[r] != c
-                mark[r] = c
-                p += one(I); targets(graph)[p] = r
+            if r != rprv
+                p += one(I); targets(cons_to_cc)[p] = r
             end
 
-            if j != jprv
-                r = frnt_to_cc[S.idx[j]]
-
-                if mark[r] != c
-                    mark[r] = c
-                    p += one(I); targets(graph)[p] = r
-                end
-            end
-
-            jprv = j
+            rprv = r
         end
     end
 
-    pointers(graph)[m + one(I)] = p + one(I)
-    cgraph = trilinegraph(graph, reverse(graph))
-    return cgraph, frnt_to_cc, frtptr, ncc
+    pointers(cons_to_cc)[m + one(I)] = p + one(I)
+
+    cc_to_cons = reverse(cons_to_cc)
+
+    mark = FVector{I}(undef, m)
+
+    for c in oneto(m)
+        mark[c] = A.colptr[c]
+    end
+
+    p = zero(I)
+
+    for cc in vertices(cc_to_cons)
+        pointers(cc_to_pntr)[cc] = p + one(I)
+
+        for c in neighbors(cc_to_cons, cc)
+            p += one(I); targets(cc_to_pntr)[p] = mark[c]
+
+            for q in mark[c]:A.colptr[c + one(I)] - one(I)
+                i, j = cart(n, rowvals(A)[q])
+                r = frnt_to_cc[S.idx[j]]
+
+                if r != cc
+                    mark[c] = q
+                    break
+                end
+            end
+        end
+    end 
+
+    pointers(cc_to_pntr)[ncc + one(I)] = p + one(I)
+
+    cons_to_cons = trilinegraph(cons_to_cc, cc_to_cons)
+    return cons_to_cons, cc_to_cons, cc_to_pntr, frnt_to_cc, frtptr, ncc
 end
 
 struct Problem{T, I}
@@ -235,6 +244,8 @@ struct Problem{T, I}
     indices_primal::FVector{I}
     indices_slack::FVector{I}
     cgraph::FBipartiteGraph{I, I}
+    cc_to_cons::FBipartiteGraph{I, I}
+    cc_to_pntr::FBipartiteGraph{I, I}
     frnt_to_cc::FVector{I}
     frtptr::FVector{I}
     ncc::I
@@ -265,10 +276,10 @@ function Problem(
 
     indices_primal = compute_indices_primal(S, Ap)
     indices_slack = compute_indices_slack(Gp, Ap)
-    cgraph, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
+    cgraph, cc_to_cons, cc_to_pntr, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
     idxfwd, idxbwd, idxptr, nrhs = touched(Ap, k, S, frnt_to_cc, ncc)
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs)
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, cc_to_cons, cc_to_pntr, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs)
 end
 
 function Problem(
@@ -295,6 +306,8 @@ function Base.copy(problem::Problem)
         problem.indices_primal,
         problem.indices_slack,
         problem.cgraph,
+        problem.cc_to_cons,
+        problem.cc_to_pntr,
         problem.frnt_to_cc,
         problem.frtptr,
         problem.ncc,
