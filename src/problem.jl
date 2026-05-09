@@ -41,24 +41,121 @@ function trilinegraph(ve::FBipartiteGraph{V, E}, ev::FBipartiteGraph{V, E}) wher
     return FBipartiteGraph{V, E}(n, n, m, pointer, target)
 end
 
-function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where {T, I}
-    m = convert(I, size(A, 2))
-    n = convert(I, ncl(S))
-    k = zero(I)
+# Count connected components (trees) in the elimination forest.
+function count_connected_components(S::ChordalSymbolic{I}) where {I}
+    ncc = zero(I)
 
-    cmp = FVector{I}(undef, nfr(S))
+    for i in fronts(S)
+        if iszero(S.pnt[i])
+            ncc += one(I)
+        end
+    end
+
+    return ncc
+end
+
+# Compute connected components of the elimination forest.
+# Returns (frnt_to_cc, frtptr, ncc) where:
+#   - frnt_to_cc[f] = CC index for front f (increasing with front order)
+#   - frtptr[c]:frtptr[c+1]-1 = front range for CC c
+#   - ncc = number of connected components
+function connected_components(S::ChordalSymbolic{I}) where {I}
+    nf = convert(I, nfr(S))
+    ncc = count_connected_components(S)
+
+    frnt_to_cc = FVector{I}(undef, nf)
+    frtptr = FVector{I}(undef, ncc + one(I))
+
+    # Reverse pass: fill frnt_to_cc (countdown so CCs increase with fronts)
+    c = ncc + one(I)
 
     for i in reverse(fronts(S))
         j = S.pnt[i]
 
         if iszero(j)
-            cmp[i] = k += one(I)
+            frnt_to_cc[i] = c -= one(I)
         else
-            cmp[i] = cmp[j]
+            frnt_to_cc[i] = frnt_to_cc[j]
         end
     end
 
-    mark = FVector{I}(undef, k)
+    # Forward pass: build frtptr
+    cprev = zero(I)
+
+    for i in fronts(S)
+        c = frnt_to_cc[i]
+
+        while cprev < c
+            cprev += one(I)
+            frtptr[cprev] = i
+        end
+    end
+
+    frtptr[ncc + one(I)] = nf + one(I)
+
+    return frnt_to_cc, frtptr, ncc
+end
+
+# Compute touched rows for sparse constraints (k+1:m).
+# Returns (idxfwd, idxbwd, idxptr, nrhs) where:
+#   - idxfwd[1:nrhs] = global row indices of touched rows
+#   - idxbwd[row] = local index in idxfwd (0 if not touched)
+#   - idxptr[c]:idxptr[c+1]-1 = range in idxfwd for CC c
+#   - nrhs = number of touched rows
+function touched(
+        A::SparseMatrixCSC{T, I},
+        k::I,
+        S::ChordalSymbolic{I},
+        frnt_to_cc::FVector{I},
+        ncc::I,
+    ) where {T, I}
+    n = convert(I, ncl(S))
+    m = convert(I, size(A, 2))
+
+    idxfwd = FVector{I}(undef, n)
+    idxbwd = FVector{I}(undef, n)
+    idxptr = FVector{I}(undef, ncc + one(I))
+
+    fill!(idxfwd, zero(I))
+    fill!(idxbwd, zero(I))
+
+    @inbounds for c in k + one(I):m
+        for p in nzrange(A, c)
+            i, j = cart(n, rowvals(A)[p])
+            idxbwd[i] = one(I)
+            idxbwd[j] = one(I)
+        end
+    end
+
+    nrhs = ccold = zero(I)
+
+    @inbounds for i in oneto(n)
+        if !iszero(idxbwd[i])
+            idxbwd[i] = nrhs += one(I)
+            idxfwd[nrhs] = i
+
+            cc = frnt_to_cc[S.idx[i]]
+
+            while ccold < cc
+                ccold += one(I); idxptr[ccold] = nrhs
+            end
+        end
+    end
+
+    while ccold ≤ ncc
+        ccold += one(I); idxptr[ccold] = nrhs + one(I)
+    end
+
+    return idxfwd, idxbwd, idxptr, nrhs
+end
+
+function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where {T, I}
+    m = convert(I, size(A, 2))
+    n = convert(I, ncl(S))
+
+    frnt_to_cc, frtptr, ncc = connected_components(S)
+
+    mark = FVector{I}(undef, ncc)
     fill!(mark, zero(I))
 
     p = zero(I)
@@ -69,7 +166,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
         for q in nzrange(A, c)
             i, j = cart(n, rowvals(A)[q])
 
-            r = cmp[S.idx[i]]
+            r = frnt_to_cc[S.idx[i]]
 
             if mark[r] != -c
                 mark[r] = -c
@@ -77,7 +174,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
             end
 
             if j != jprv
-                r = cmp[S.idx[j]]
+                r = frnt_to_cc[S.idx[j]]
 
                 if mark[r] != -c
                     mark[r] = -c
@@ -89,7 +186,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
         end
     end
 
-    graph = FBipartiteGraph{I, I}(k, m, p)
+    graph = FBipartiteGraph{I, I}(ncc, m, p)
 
     p = zero(I)
 
@@ -101,7 +198,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
         for q in nzrange(A, c)
             i, j = cart(n, rowvals(A)[q])
 
-            r = cmp[S.idx[i]]
+            r = frnt_to_cc[S.idx[i]]
 
             if mark[r] != c
                 mark[r] = c
@@ -109,7 +206,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
             end
 
             if j != jprv
-                r = cmp[S.idx[j]]
+                r = frnt_to_cc[S.idx[j]]
 
                 if mark[r] != c
                     mark[r] = c
@@ -122,7 +219,8 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
     end
 
     pointers(graph)[m + one(I)] = p + one(I)
-    return trilinegraph(graph, reverse(graph))
+    cgraph = trilinegraph(graph, reverse(graph))
+    return cgraph, frnt_to_cc, frtptr, ncc
 end
 
 struct Problem{T, I}
@@ -137,6 +235,13 @@ struct Problem{T, I}
     indices_primal::FVector{I}
     indices_slack::FVector{I}
     cgraph::FBipartiteGraph{I, I}
+    frnt_to_cc::FVector{I}
+    frtptr::FVector{I}
+    ncc::I
+    idxfwd::FVector{I}
+    idxbwd::FVector{I}
+    idxptr::FVector{I}
+    nrhs::I
 end
 
 function Problem(
@@ -160,9 +265,10 @@ function Problem(
 
     indices_primal = compute_indices_primal(S, Ap)
     indices_slack = compute_indices_slack(Gp, Ap)
-    cgraph = constraint_graph(S, Ap)
+    cgraph, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
+    idxfwd, idxbwd, idxptr, nrhs = touched(Ap, k, S, frnt_to_cc, ncc)
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph)
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs)
 end
 
 function Problem(
@@ -189,6 +295,13 @@ function Base.copy(problem::Problem)
         problem.indices_primal,
         problem.indices_slack,
         problem.cgraph,
+        problem.frnt_to_cc,
+        problem.frtptr,
+        problem.ncc,
+        problem.idxfwd,
+        problem.idxbwd,
+        problem.idxptr,
+        problem.nrhs,
     )
 end
 

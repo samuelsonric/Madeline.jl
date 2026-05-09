@@ -6,7 +6,6 @@ using LinearAlgebra.BLAS: BlasInt
 using SparseArrays: SparseMatrixCSC, rowvals, nonzeros, nzrange, nnz, sparse
 using Printf
 using CommonSolve: CommonSolve, init, solve, solve!, step!
-using Base.Threads: @threads, nthreads
 
 using CliqueTrees: FBipartiteGraph, pointers, targets, neighbors, nv, etype, vertices, nov
 using CliqueTrees.Multifrontal

@@ -8,7 +8,7 @@
 #   - Γ: half-solved cache vectors [u v] where u = ωL⁻¹b, v = L⁻¹(Aη)
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
-#   - U, V, indices, idxmap: sparse constraint infrastructure
+#   - U, V: workspace for sparse constraint Schur complement
 struct KKT{T, I}
     chol::Chol{T}
     Γ::FMatrix{T}                             # [u v] half-solved vectors (m × 2)
@@ -16,54 +16,20 @@ struct KKT{T, I}
     γ::FVector{T}                             # Σ⁻¹ξ solution
     U::FMatrix{T}                             # workspace for sparse constraints (n × nrhs)
     V::FMatrix{T}                             # W^T W for sparse constraints (nrhs × nrhs)
-    indices::FVector{I}                       # touched indices
-    idxmap::FVector{I}                        # index map
-end
-
-function touched(A::SparseMatrixCSC{T, I}, k::I) where {T, I}
-    n = convert(I, isqrt(size(A, 1)))
-    m = convert(I, size(A, 2))
-
-    indices = FVector{I}(undef, n)
-    idxmap = FVector{I}(undef, n)
-
-    fill!(indices, zero(I))
-    fill!(idxmap, zero(I))
-
-    @inbounds for c in k + one(I):m
-        for p in nzrange(A, c)
-            i, j = cart(n, rowvals(A)[p])
-            idxmap[i] = one(I)
-            idxmap[j] = one(I)
-        end
-    end
-
-    nrhs = zero(I)
-
-    @inbounds for i in oneto(n)
-        if !iszero(idxmap[i])
-            idxmap[i] = nrhs += one(I)
-            indices[nrhs] = i
-        end
-    end
-
-    return indices, idxmap, nrhs
 end
 
 function KKT{T}(problem::Problem{T, I}) where {T, I}
-    A = problem.A
-    S = problem.S
-    k = problem.k
-    n = size(S, 1)
-    m = size(A, 2)
-    indices, idxmap, nrhs = touched(A, k)
+    n = ncl(problem.S)
+    m = size(problem.A, 2)
+    nrhs = problem.nrhs
+
     chol = Chol{T}(m)
     Γ = FMatrix{T}(undef, m, 2)
     Σ = FMatrix{T}(undef, 2, 2)
     γ = FVector{T}(undef, 2)
     U = FMatrix{T}(undef, n, nrhs)
     V = FMatrix{T}(undef, nrhs, nrhs)
-    return KKT{T, I}(chol, Γ, Σ, γ, U, V, indices, idxmap)
+    return KKT{T, I}(chol, Γ, Σ, γ, U, V)
 end
 
 # ===== Schur complement =====
@@ -118,7 +84,9 @@ function schur_entry!(
         H::FMatrix{T},
         V::FMatrix{T},
         A::SparseMatrixCSC{T, I},
-        idxmap::FVector{I},
+        idxbwd::FVector{I},
+        frnt_to_cc::FVector{I},
+        idx::FVector{I},
         n::I,
         ci::I,
         cj::I,
@@ -134,23 +102,30 @@ function schur_entry!(
             αj *= two(T)
         end
 
-        xv = idxmap[xj]
-        yv = idxmap[yj]
+        xv = idxbwd[xj]
+        yv = idxbwd[yj]
+        cv = frnt_to_cc[idx[yj]]
 
         Δij = zero(T)
 
         for pi in nzrange(A, ci)
             xi, yi = cart(n, rowvals(A)[pi])
 
-            αi = nonzeros(A)[pi]
+            cu = frnt_to_cc[idx[yi]]
 
-            xu = idxmap[xi]
-            yu = idxmap[yi]
+            if cu == cv
+                αi = nonzeros(A)[pi]
 
-            Δij += αi * V[xu, xv] * V[yu, yv]
+                xu = idxbwd[xi]
+                yu = idxbwd[yi]
 
-            if xi != yi
-                Δij += αi * V[yu, xv] * V[xu, yv]
+                Δij += αi * V[xu, xv] * V[yu, yv]
+
+                if xi != yi
+                    Δij += αi * V[yu, xv] * V[xu, yv]
+                end
+            elseif cu > cv
+                break
             end
         end
 
@@ -161,7 +136,7 @@ function schur_entry!(
     return
 end
 
-function st_build_schur_sparse_impl!(
+function build_schur_sparse_impl!(
         cache::KKT{T, I},
         problem::Problem{T, I},
     ) where {T, I}
@@ -169,87 +144,40 @@ function st_build_schur_sparse_impl!(
     V = cache.V
     A = problem.A
     k = problem.k
-    idxmap = cache.idxmap
+    idxbwd = problem.idxbwd
+    frnt_to_cc = problem.frnt_to_cc
+    idx = problem.S.idx
     cgraph = problem.cgraph
 
     n = convert(I, isqrt(size(A, 1)))
     m = convert(I,       size(A, 2))
 
     @inbounds for cj in k + one(I):m
-        schur_entry!(H, V, A, idxmap, n, cj, cj)
+        schur_entry!(H, V, A, idxbwd, frnt_to_cc, idx, n, cj, cj)
 
         for ci in neighbors(cgraph, cj)
-            schur_entry!(H, V, A, idxmap, n, ci, cj)
+            schur_entry!(H, V, A, idxbwd, frnt_to_cc, idx, n, ci, cj)
         end
     end
 
     return
 end
 
-function mt_build_schur_sparse_impl!(
-        cache::KKT{T, I},
-        problem::Problem{T, I},
-    ) where {T, I}
-    H = cache.chol.L
-    V = cache.V
-    A = problem.A
-    k = problem.k
-    idxmap = cache.idxmap
-    cgraph = problem.cgraph
-
-    n = convert(I, isqrt(size(A, 1)))
-    m = convert(I,       size(A, 2))
-
-    @inbounds @threads for cj in k + one(I):m
-        schur_entry!(H, V, A, idxmap, n, cj, cj)
-
-        for ci in neighbors(cgraph, cj)
-            schur_entry!(H, V, A, idxmap, n, ci, cj)
-        end
-    end
-
-    return
-end
-
-function st_build_schur_sparse!(
+function process_cc!(
         space::Workspace{T, J},
         cache::KKT{T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
-        problem::Problem{T, J},
+        lo::J,
+        hi::J,
+        fdsc::J,
+        root::J,
     ) where {UPLO, T, J}
-    fill!(cache.U, zero(T))
+    U = view(cache.U, :,     lo:hi)
+    V = view(cache.V, lo:hi, lo:hi)
 
-    for k in axes(cache.U, 2)
-        cache.U[cache.indices[k], k] = one(T)
-    end
-
-    div_impl!(cache.U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO))
-    syrk!(Val(:L), Val(:T), one(T), cache.U, zero(T), cache.V)
-    symmtri!(cache.V, Val(:L))
-    st_build_schur_sparse_impl!(cache, problem)
-    return
-end
-
-function mt_build_schur_sparse!(
-        space::Workspace{T, J},
-        cache::KKT{T, J},
-        L::ChordalTriangular{:N, UPLO, T, J},
-        problem::Problem{T, J},
-    ) where {UPLO, T, J}
-    nrhs = convert(J, size(cache.U, 2))
-    nt = convert(J, nthreads())
-    bs = max(J(32), div(nrhs, 4nt))
-
-    fill!(cache.U, zero(T))
-
-    for k in axes(cache.U, 2)
-        cache.U[cache.indices[k], k] = one(T)
-    end
-
-    mt_div_impl!(cache.U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), bs, nt)
-    syrk!(Val(:L), Val(:T), one(T), cache.U, zero(T), cache.V)
-    symmtri!(cache.V, Val(:L))
-    mt_build_schur_sparse_impl!(cache, problem)
+    div_impl!(U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), fdsc:root)
+    syrk!(Val(:L), Val(:T), one(T), U, zero(T), V)
+    symmtri!(V, Val(:L))
     return
 end
 
@@ -259,12 +187,23 @@ function build_schur_sparse!(
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
     ) where {UPLO, T, J}
-    if nthreads() > 1
-        mt_build_schur_sparse!(space, cache, L, problem)
-    else
-        st_build_schur_sparse!(space, cache, L, problem)
+    fill!(cache.U, zero(T))
+
+    for k in oneto(problem.nrhs)
+        cache.U[problem.idxfwd[k], k] = one(T)
     end
 
+    for c in oneto(problem.ncc)
+        lo = problem.idxptr[c]
+        hi = problem.idxptr[c + one(J)] - one(J)
+        lo > hi && continue
+
+        fdsc = problem.frtptr[c]
+        root = problem.frtptr[c + one(J)] - one(J)
+        process_cc!(space, cache, L, lo, hi, fdsc, root)
+    end
+
+    build_schur_sparse_impl!(cache, problem)
     return
 end
 
