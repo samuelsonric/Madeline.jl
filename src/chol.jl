@@ -19,6 +19,16 @@ function factorize!(chol::Chol{T}) where {T}
     return chol
 end
 
+function setfactorindex!(chol::Chol{T}, i::Integer, j::Integer, v::T) where {T}
+    chol.L[i, j] = v
+    return chol
+end
+
+function addfactorindex!(chol::Chol{T}, i::Integer, j::Integer, v::T) where {T}
+    chol.L[i, j] += v
+    return chol
+end
+
 function ldiv_fwd!(chol::Chol{T}, b::AbstractVector{T}) where {T}
     @inbounds for i in 1:chol.rank
         chol.temp[i] = b[chol.perm[i]]

@@ -240,23 +240,7 @@ function build_schur!(
     H = cache.chol.L
     m = size(H, 1)
     cgraph = problem.cgraph
-
-    fill!(H, zero(T))
-
-    @timeit TIMER "dense_schur" for j in oneto(problem.k)
-        copytopacked!(w, problem.A, problem.indices_primal, problem.b, j)
-        hessian!(space, L, x, w, Val(false))
-
-        H[j, j] = dotpacked(w, problem.A, problem.indices_primal, problem.b, j)
-
-        for i in neighbors(cgraph, j)
-            H[i, j] = dotpacked(w, problem.A, problem.indices_primal, problem.b, i)
-        end
-    end
-
-    if problem.k < m
-        @timeit TIMER "sparse_schur" build_schur_sparse!(space, cache, L, problem)
-    end
+    chol = cache.chol
 
     ω = x.τ^2
     b = problem.b
@@ -265,8 +249,23 @@ function build_schur!(
         bj = ω * b[j]
 
         for i in j:m
-            H[i, j] += b[i] * bj
+            setfactorindex!(chol, i, j, b[i] * bj)
         end
+    end
+
+    @timeit TIMER "dense_schur" for j in oneto(problem.k)
+        copytopacked!(w, problem.A, problem.indices_primal, problem.b, j)
+        hessian!(space, L, x, w, Val(false))
+
+        addfactorindex!(chol, j, j, dotpacked(w, problem.A, problem.indices_primal, problem.b, j))
+
+        for i in neighbors(cgraph, j)
+            addfactorindex!(chol, i, j, dotpacked(w, problem.A, problem.indices_primal, problem.b, i))
+        end
+    end
+
+    if problem.k < m
+        @timeit TIMER "sparse_schur" build_schur_sparse!(space, cache, L, problem)
     end
 
     @timeit TIMER "chol_factor" factorize!(cache.chol)
