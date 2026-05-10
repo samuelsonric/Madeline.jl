@@ -6,15 +6,15 @@
 # Storage:
 #   - chol: pivoted Cholesky factor of S₀ = A₂H₂₂⁻¹A₂*
 #   - Γ: half-solved cache vectors [u₀ c₀] where u₀ = L⁻¹b, c₀ = L⁻¹(Aη)
-#   - U_ws, V_ws: small workspaces for sparse constraint Schur complement
+#   - U, V: small workspaces for sparse constraint Schur complement
 #                 (sized for largest connected component, reused via OffsetArrays)
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
 #   - ρ: ⟨u₀, c₀⟩
 mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     const chol::Chol
-    const U_ws::FMatrix{T}              # workspace for sparse constraints (max_cc_rows × max_rhs_per_cc)
-    const V_ws::FMatrix{T}              # W^T W workspace (max_rhs_per_cc × max_rhs_per_cc)
+    const U::FMatrix{T}              # workspace for sparse constraints (max_cc_rows × max_rhs_per_cc)
+    const V::FMatrix{T}              # W^T W workspace (max_rhs_per_cc × max_rhs_per_cc)
     const Γ::FMatrix{T}                 # [u₀ c₀] after build_kkt!
     const Σ::FMatrix{T}                 # 2×2 capacitance
     const γ::FVector{T}                 # Σ⁻¹ξ solution
@@ -25,12 +25,12 @@ function KKT{T}(problem::Problem{T}) where {T}
     m = size(problem.A, 2)
 
     chol = DenseCholeskyPivoted{T}(m)
-    U_ws = FMatrix{T}(undef, problem.max_cc_rows, problem.max_rhs_per_cc)
-    V_ws = FMatrix{T}(undef, problem.max_rhs_per_cc, problem.max_rhs_per_cc)
+    U = FMatrix{T}(undef, problem.max_cc_rows, problem.max_rhs_per_cc)
+    V = FMatrix{T}(undef, problem.max_rhs_per_cc, problem.max_rhs_per_cc)
     Γ = FMatrix{T}(undef, m, 2)
     Σ = FMatrix{T}(undef, 2, 2)
     γ = FVector{T}(undef, 2)
-    return KKT(chol, U_ws, V_ws, Γ, Σ, γ, zero(T))
+    return KKT(chol, U, V, Γ, Σ, γ, zero(T))
 end
 
 # ===== Schur complement =====
@@ -239,33 +239,24 @@ function build_schur!(
 
         slo = problem.idxptr[cc]
         shi = problem.idxptr[cc + one(J)] - one(J)
-        srange = slo:shi
         ncols = shi - slo + one(J)
 
-        # Skip empty cc
-        ncols <= zero(J) && continue
+        if ispositive(ncols)
+            rlo = L.S.res.ptr[fdsc]
+            rhi = L.S.res.ptr[root + one(J)] - one(J)
+            nrows = rhi - rlo + one(J)
 
-        # Get row range for this cc from symbolic factorization
-        res_ptr = L.S.res.ptr
-        rlo = res_ptr[fdsc]
-        rhi = res_ptr[root + one(J)] - one(J)
-        rrange = rlo:rhi
-        nrows = rhi - rlo + one(J)
+            U = view(cache.U, oneto(nrows), oneto(ncols))
+            V = view(cache.V, oneto(ncols), oneto(ncols))
 
-        # Create views into workspaces
-        U = view(cache.U_ws, oneto(nrows), oneto(ncols))
-        V = view(cache.V_ws, oneto(ncols), oneto(ncols))
+            fill!(U, zero(T))
 
-        # Initialize U with identity columns for this cc
-        fill!(U, zero(T))
+            for i in slo:shi
+                U[problem.idxfwd[i] - rlo + one(J), i - slo + one(J)] = one(T)
+            end
 
-        for (local_col, global_col) in enumerate(srange)
-            # idxfwd gives global row, offset to local
-            U[problem.idxfwd[global_col] - rlo + one(J), local_col] = one(T)
+            process_cc!(space, U, V, L, frange, rlo:rhi)
         end
-
-        # Process this cc
-        process_cc!(space, U, V, L, frange, rrange)
 
         for kj in klo:khi
             cj = targets(cc_to_cons)[kj]
@@ -273,7 +264,7 @@ function build_schur!(
             if cj <= k
                 schur_column_dense!(space, cache, x.X, w.X, L, problem, cj, kj, khi, frange)
             else
-                schur_column_sparse!(V, cache.chol, problem, cj, kj, khi, srange)
+                schur_column_sparse!(V, cache.chol, problem, cj, kj, khi, slo:shi)
             end
         end
     end
