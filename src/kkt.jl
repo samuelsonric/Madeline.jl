@@ -10,8 +10,8 @@
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
 #   - ρ: ⟨u₀, c₀⟩
-mutable struct KKT{T, I}
-    const chol::DenseCholeskyPivoted{T}
+mutable struct KKT{T, I, Chol <: AbstractCholesky{T}}
+    const chol::Chol
     const U::FMatrix{T}                 # workspace for sparse constraints (n × nrhs)
     const V::FMatrix{T}                 # W^T W for sparse constraints (nrhs × nrhs)
     const Γ::FMatrix{T}                 # [u₀ c₀] after build_kkt!
@@ -31,7 +31,7 @@ function KKT{T}(problem::Problem{T, I}) where {T, I}
     Γ = FMatrix{T}(undef, m, 2)
     Σ = FMatrix{T}(undef, 2, 2)
     γ = FVector{T}(undef, 2)
-    return KKT{T, I}(chol, U, V, Γ, Σ, γ, zero(T))
+    return KKT(chol, U, V, Γ, Σ, γ, zero(T))
 end
 
 # ===== Schur complement =====
