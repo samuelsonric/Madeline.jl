@@ -85,9 +85,11 @@ function schur_entry_sparse(
         V::AbstractMatrix{T},
         A::SparseMatrixCSC{T, I},
         idxbwd::FVector{I},
+        srange::AbstractRange{I},
         irange::AbstractRange{I},
         jrange::AbstractRange{I},
     ) where {T, I}
+    slo = first(srange)
     n = convert(I, isqrt(size(A, 1)))
     rowval = rowvals(A)
     nzval = nonzeros(A)
@@ -103,8 +105,8 @@ function schur_entry_sparse(
             αj *= two(T)
         end
 
-        xv = idxbwd[xj]
-        yv = idxbwd[yj]
+        xv = idxbwd[xj] - slo + one(I)
+        yv = idxbwd[yj] - slo + one(I)
 
         Δij = zero(T)
 
@@ -113,8 +115,8 @@ function schur_entry_sparse(
 
             αi = nzval[pi]
 
-            xu = idxbwd[xi]
-            yu = idxbwd[yi]
+            xu = idxbwd[xi] - slo + one(I)
+            yu = idxbwd[yi] - slo + one(I)
 
             Δij += αi * V[xu, xv] * V[yu, yv]
 
@@ -166,33 +168,23 @@ function schur_column_dense!(
 end
 
 function schur_column_sparse!(
-        V::AbstractMatrix{T},
-        chol::AbstractCholesky{T},
+        cache::KKT{T},
         problem::Problem{T, J},
         cj::J,
         kj::J,
         khi::J,
         srange::AbstractRange{J},
     ) where {T, J}
-    # Wrap V with offset indices for idxbwd lookups
-    Voff = OffsetArray(V, srange, srange)
+    pjstrt = targets(problem.cc_to_strt)[kj]
+    pjstop = targets(problem.cc_to_stop)[kj]
 
-    A = problem.A
-    idxbwd = problem.idxbwd
-    cc_to_cons = problem.cc_to_cons
-    cc_to_strt = problem.cc_to_strt
-    cc_to_stop = problem.cc_to_stop
-
-    pjstrt = targets(cc_to_strt)[kj]
-    pjstop = targets(cc_to_stop)[kj]
-
-    addfactorindex!(chol, schur_entry_sparse(Voff, A, idxbwd, pjstrt:pjstop, pjstrt:pjstop), cj, cj)
+    addfactorindex!(cache.chol, schur_entry_sparse(cache.V, problem.A, problem.idxbwd, srange, pjstrt:pjstop, pjstrt:pjstop), cj, cj)
 
     for ki in kj + one(J):khi
-        ci = targets(cc_to_cons)[ki]
-        pistrt = targets(cc_to_strt)[ki]
-        pistop = targets(cc_to_stop)[ki]
-        addfactorindex!(chol, schur_entry_sparse(Voff, A, idxbwd, pistrt:pistop, pjstrt:pjstop), ci, cj)
+        ci = targets(problem.cc_to_cons)[ki]
+        pistrt = targets(problem.cc_to_strt)[ki]
+        pistop = targets(problem.cc_to_stop)[ki]
+        addfactorindex!(cache.chol, schur_entry_sparse(cache.V, problem.A, problem.idxbwd, srange, pistrt:pistop, pjstrt:pjstop), ci, cj)
     end
 
     return
@@ -200,16 +192,35 @@ end
 
 function process_cc!(
         space::Workspace{T, J},
-        U::AbstractMatrix{T},
-        V::AbstractMatrix{T},
-        L::ChordalTriangular{:N, UPLO, T, J},
+        cache::KKT{T},
+        problem::Problem{T, J},
+        L::ChordalTriangular{:N},
         frange::AbstractRange{J},
         rrange::AbstractRange{J},
-    ) where {UPLO, T, J}
-    # Wrap U with offset rows for div_impl!
-    Uoff = OffsetArray(U, rrange, axes(U, 2))
-    div_impl!(Uoff, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), frange)
-    # BLAS uses raw 1-based arrays
+        srange::AbstractRange{J},
+    ) where {T, J}
+    rlo = first(rrange)
+    slo = first(srange)
+
+    for j in srange
+        jloc = j - slo + one(J)
+
+        for i in rrange
+            iloc = i - rlo + one(J)
+
+            if i == problem.idxfwd[j]
+                α = one(T)
+            else
+                α = zero(T)
+            end
+
+            cache.U[iloc, jloc] = α
+        end
+    end
+
+    U = view(cache.U, eachindex(rrange), eachindex(srange))
+    V = view(cache.V, eachindex(srange), eachindex(srange))
+    div_impl!(OffsetArray(U, rrange, :), space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), L.uplo, frange)
     syrk!(Val(:L), Val(:T), one(T), U, zero(T), V)
     symmtri!(V, Val(:L))
     return
@@ -239,33 +250,11 @@ function build_schur!(
 
         slo = problem.idxptr[cc]
         shi = problem.idxptr[cc + one(J)] - one(J)
-        ncols = shi - slo + one(J)
 
-        U = cache.U
-        V = cache.V
-
-        if ispositive(ncols)
+        if slo <= shi
             rlo = L.S.res.ptr[fdsc]
             rhi = L.S.res.ptr[root + one(J)] - one(J)
-            nrows = rhi - rlo + one(J)
-
-            for j in slo:shi
-                jloc = j - slo + one(J)
-
-                for i in rlo:rhi
-                    iloc = i - rlo + one(J)
-
-                    if i == problem.idxfwd[j]
-                        α = one(T)
-                    else
-                        α = zero(T)
-                    end
-
-                    U[iloc, jloc] = α
-                end
-            end
-
-            process_cc!(space, view(U, oneto(nrows), oneto(ncols)), view(V, oneto(ncols), oneto(ncols)), L, frange, rlo:rhi)
+            process_cc!(space, cache, problem, L, fdsc:root, rlo:rhi, slo:shi)
         end
 
         for kj in klo:khi
@@ -274,7 +263,7 @@ function build_schur!(
             if cj <= k
                 schur_column_dense!(space, cache, x.X, w.X, L, problem, cj, kj, khi, frange)
             else
-                schur_column_sparse!(view(V, oneto(ncols), oneto(ncols)), cache.chol, problem, cj, kj, khi, slo:shi)
+                schur_column_sparse!(cache, problem, cj, kj, khi, slo:shi)
             end
         end
     end
