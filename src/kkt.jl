@@ -309,10 +309,10 @@ function build_kkt!(
     ω = w.τ
     α = ω / (one(T) + ω * Σ₁₁)
 
-    cache.Σ[1, 1] = α
-    cache.Σ[2, 1] =  σ - α * Σ₂₁
-    cache.Σ[1, 2] = -σ - α * Σ₂₁
-    cache.Σ[2, 2] = symdot(w.X, problem.C) - Σ₂₂ + α * Σ₂₁ * Σ₂₁
+    cache.Σ[1, 1] =                          α
+    cache.Σ[2, 1] =  σ                     - α * Σ₂₁
+    cache.Σ[1, 2] = -σ                     - α * Σ₂₁
+    cache.Σ[2, 2] = symdot(w.X, problem.C) + α * Σ₂₁ * Σ₂₁ - Σ₂₂
 
     cache.ρ = Σ₂₁
     return
@@ -367,7 +367,7 @@ function solve_kkt!(
     Δ = cache.Σ[1, 1] * dot(Γ₁, dir.dual)
 
     cache.γ[1] += Δ
-    cache.γ[2] -= Δ * cache.ρ
+    cache.γ[2] += Δ * -cache.ρ
 
     ldiv_fwd!(cache.chol, dir.dual)
 
