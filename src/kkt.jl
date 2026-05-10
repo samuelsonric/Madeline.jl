@@ -140,13 +140,12 @@ function process_cc!(
         space::Workspace{T, J},
         cache::KKT{T},
         L::ChordalTriangular{:N, UPLO, T, J},
-        lo::J,
-        hi::J,
         fdsc::J,
         root::J,
+        range::AbstractRange{J},
     ) where {UPLO, T, J}
-    U = view(cache.U, :,     lo:hi)
-    V = view(cache.V, lo:hi, lo:hi)
+    U = view(cache.U, :,     range)
+    V = view(cache.V, range, range)
 
     div_impl!(U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), fdsc:root)
     syrk!(Val(:L), Val(:T), one(T), U, zero(T), V)
@@ -190,42 +189,34 @@ function build_schur!(
         lo = pointers(cc_to_cons)[cc]
         hi = pointers(cc_to_cons)[cc + one(J)] - one(J)
 
-        # --- Dense constraints: copytopacked / hessian / dotpacked ---
-        for kj in lo:hi
-            cj = targets(cc_to_cons)[kj]
-            cj > k && continue
-
-            pjstrt = targets(cc_to_strt)[kj]
-            pjstop = targets(cc_to_stop)[kj]
-
-            copytopacked!(w.X, A, indices, pjstrt:pjstop)
-            hessian!(space, L, x, w, Val(false), fdsc:root)
-
-            addfactorindex!(chol, dotpacked(w.X, A, indices, pjstrt:pjstop), cj, cj)
-
-            for ki in kj + one(J):hi
-                ci = targets(cc_to_cons)[ki]
-                pistrt = targets(cc_to_strt)[ki]
-                pistop = targets(cc_to_stop)[ki]
-                addfactorindex!(chol, dotpacked(w.X, A, indices, pistrt:pistop), ci, cj)
-            end
-        end
-
-        # --- Sparse constraints: process_cc! ---
+        # --- Build V matrix for this CC ---
         slo = problem.idxptr[cc]
         shi = problem.idxptr[cc + one(J)] - one(J)
 
         if slo <= shi
-            process_cc!(space, cache, L, slo, shi, fdsc, root)
+            process_cc!(space, cache, L, fdsc, root, slo:shi)
+        end
 
-            # --- Sparse-sparse Schur entries ---
-            for kj in lo:hi
-                cj = targets(cc_to_cons)[kj]
-                cj <= k && continue
+        for kj in lo:hi
+            cj = targets(cc_to_cons)[kj]
+            pjstrt = targets(cc_to_strt)[kj]
+            pjstop = targets(cc_to_stop)[kj]
 
-                pjstrt = targets(cc_to_strt)[kj]
-                pjstop = targets(cc_to_stop)[kj]
+            if cj <= k
+                # --- Dense: copytopacked / hessian / dotpacked ---
+                copytopacked!(w.X, A, indices, pjstrt:pjstop)
+                hessian!(space, L, x, w, Val(false), fdsc:root)
 
+                addfactorindex!(chol, dotpacked(w.X, A, indices, pjstrt:pjstop), cj, cj)
+
+                for ki in kj + one(J):hi
+                    ci = targets(cc_to_cons)[ki]
+                    pistrt = targets(cc_to_strt)[ki]
+                    pistop = targets(cc_to_stop)[ki]
+                    addfactorindex!(chol, dotpacked(w.X, A, indices, pistrt:pistop), ci, cj)
+                end
+            else
+                # --- Sparse: schur_entry_cc! ---
                 schur_entry_cc!(H, V, A, idxbwd, n, cj, cj, pjstrt, pjstop, pjstrt, pjstop)
 
                 for ki in kj + one(J):hi
