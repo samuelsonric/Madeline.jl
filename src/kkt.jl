@@ -239,12 +239,11 @@ function build_schur!(
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
     ) where {UPLO, T, J}
-    H = cache.chol.L
-    m = size(H, 1)
+    m = size(cache.chol.L, 1)
     cgraph = problem.cgraph
     chol = cache.chol
 
-    fill!(H, zero(T))
+    setfactorzero!(chol)
 
     @timeit TIMER "dense_schur" for j in oneto(problem.k)
         copytopacked!(w, problem.A, problem.indices_primal, problem.b, j)

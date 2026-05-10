@@ -29,6 +29,11 @@ function addfactorindex!(chol::Chol{T}, i::Integer, j::Integer, v::T) where {T}
     return chol
 end
 
+function setfactorzero!(chol::Chol{T}) where {T}
+    fill!(chol.L, zero(T))
+    return chol
+end
+
 function ldiv_fwd!(chol::Chol{T}, b::AbstractVector{T}) where {T}
     @inbounds for i in 1:chol.rank
         chol.temp[i] = b[chol.perm[i]]
