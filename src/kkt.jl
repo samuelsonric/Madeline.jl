@@ -6,14 +6,15 @@
 # Storage:
 #   - chol: pivoted Cholesky factor of S₀ = A₂H₂₂⁻¹A₂*
 #   - Γ: half-solved cache vectors [u₀ c₀] where u₀ = L⁻¹b, c₀ = L⁻¹(Aη)
-#   - U, V: workspace for sparse constraint Schur complement
+#   - U_ws, V_ws: small workspaces for sparse constraint Schur complement
+#                 (sized for largest connected component, reused via OffsetArrays)
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
 #   - ρ: ⟨u₀, c₀⟩
 mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     const chol::Chol
-    const U::FMatrix{T}                 # workspace for sparse constraints (n × nrhs)
-    const V::FMatrix{T}                 # W^T W for sparse constraints (nrhs × nrhs)
+    const U_ws::FMatrix{T}              # workspace for sparse constraints (max_cc_rows × max_rhs_per_cc)
+    const V_ws::FMatrix{T}              # W^T W workspace (max_rhs_per_cc × max_rhs_per_cc)
     const Γ::FMatrix{T}                 # [u₀ c₀] after build_kkt!
     const Σ::FMatrix{T}                 # 2×2 capacitance
     const γ::FVector{T}                 # Σ⁻¹ξ solution
@@ -21,17 +22,15 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
 end
 
 function KKT{T}(problem::Problem{T}) where {T}
-    n = ncl(problem.S)
     m = size(problem.A, 2)
-    nrhs = problem.nrhs
 
     chol = DenseCholeskyPivoted{T}(m)
-    U = FMatrix{T}(undef, n, nrhs)
-    V = FMatrix{T}(undef, nrhs, nrhs)
+    U_ws = FMatrix{T}(undef, problem.max_cc_rows, problem.max_rhs_per_cc)
+    V_ws = FMatrix{T}(undef, problem.max_rhs_per_cc, problem.max_rhs_per_cc)
     Γ = FMatrix{T}(undef, m, 2)
     Σ = FMatrix{T}(undef, 2, 2)
     γ = FVector{T}(undef, 2)
-    return KKT(chol, U, V, Γ, Σ, γ, zero(T))
+    return KKT(chol, U_ws, V_ws, Γ, Σ, γ, zero(T))
 end
 
 # ===== Schur complement =====
@@ -83,7 +82,7 @@ function build_gram!(cache::KKT, A::SparseMatrixCSC{T, I}) where {T, I}
 end
 
 function schur_entry_sparse(
-        V::FMatrix{T},
+        V::AbstractMatrix{T},
         A::SparseMatrixCSC{T, I},
         idxbwd::FVector{I},
         irange::AbstractRange{I},
@@ -167,30 +166,33 @@ function schur_column_dense!(
 end
 
 function schur_column_sparse!(
-        cache::KKT{T},
+        V::AbstractMatrix{T},
+        chol::AbstractCholesky{T},
         problem::Problem{T, J},
         cj::J,
         kj::J,
         khi::J,
+        srange::AbstractRange{J},
     ) where {T, J}
-    V = cache.V
+    # Wrap V with offset indices for idxbwd lookups
+    Voff = OffsetArray(V, srange, srange)
+
     A = problem.A
     idxbwd = problem.idxbwd
     cc_to_cons = problem.cc_to_cons
     cc_to_strt = problem.cc_to_strt
     cc_to_stop = problem.cc_to_stop
-    chol = cache.chol
 
     pjstrt = targets(cc_to_strt)[kj]
     pjstop = targets(cc_to_stop)[kj]
 
-    addfactorindex!(chol, schur_entry_sparse(V, A, idxbwd, pjstrt:pjstop, pjstrt:pjstop), cj, cj)
+    addfactorindex!(chol, schur_entry_sparse(Voff, A, idxbwd, pjstrt:pjstop, pjstrt:pjstop), cj, cj)
 
     for ki in kj + one(J):khi
         ci = targets(cc_to_cons)[ki]
         pistrt = targets(cc_to_strt)[ki]
         pistop = targets(cc_to_stop)[ki]
-        addfactorindex!(chol, schur_entry_sparse(V, A, idxbwd, pistrt:pistop, pjstrt:pjstop), ci, cj)
+        addfactorindex!(chol, schur_entry_sparse(Voff, A, idxbwd, pistrt:pistop, pjstrt:pjstop), ci, cj)
     end
 
     return
@@ -198,20 +200,18 @@ end
 
 function process_cc!(
         space::Workspace{T, J},
-        cache::KKT{T},
+        U::AbstractMatrix{T},
+        V::AbstractMatrix{T},
         L::ChordalTriangular{:N, UPLO, T, J},
         frange::AbstractRange{J},
-        srange::AbstractRange{J},
+        rrange::AbstractRange{J},
     ) where {UPLO, T, J}
-    if !isempty(srange)
-        U = view(cache.U, :,     srange)
-        V = view(cache.V, srange, srange)
-
-        div_impl!(U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), frange)
-        syrk!(Val(:L), Val(:T), one(T), U, zero(T), V)
-        symmtri!(V, Val(:L))
-    end
-
+    # Wrap U with offset rows for div_impl!
+    Uoff = OffsetArray(U, rrange, axes(U, 2))
+    div_impl!(Uoff, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), frange)
+    # BLAS uses raw 1-based arrays
+    syrk!(Val(:L), Val(:T), one(T), U, zero(T), V)
+    symmtri!(V, Val(:L))
     return
 end
 
@@ -229,31 +229,51 @@ function build_schur!(
 
     setfactorzero!(chol)
 
-    fill!(cache.U, zero(T))
-
-    for i in oneto(problem.nrhs)
-        cache.U[problem.idxfwd[i], i] = one(T)
-    end
-
     @timeit TIMER "schur" for cc in oneto(problem.ncc)
         fdsc = problem.frtptr[cc]
         root = problem.frtptr[cc + one(J)] - one(J)
+        frange = fdsc:root
 
         klo = pointers(cc_to_cons)[cc]
         khi = pointers(cc_to_cons)[cc + one(J)] - one(J)
 
         slo = problem.idxptr[cc]
         shi = problem.idxptr[cc + one(J)] - one(J)
+        srange = slo:shi
+        ncols = shi - slo + one(J)
 
-        process_cc!(space, cache, L, fdsc:root, slo:shi)
+        # Skip empty cc
+        ncols <= zero(J) && continue
+
+        # Get row range for this cc from symbolic factorization
+        res_ptr = L.S.res.ptr
+        rlo = res_ptr[fdsc]
+        rhi = res_ptr[root + one(J)] - one(J)
+        rrange = rlo:rhi
+        nrows = rhi - rlo + one(J)
+
+        # Create views into workspaces
+        U = view(cache.U_ws, oneto(nrows), oneto(ncols))
+        V = view(cache.V_ws, oneto(ncols), oneto(ncols))
+
+        # Initialize U with identity columns for this cc
+        fill!(U, zero(T))
+
+        for (local_col, global_col) in enumerate(srange)
+            # idxfwd gives global row, offset to local
+            U[problem.idxfwd[global_col] - rlo + one(J), local_col] = one(T)
+        end
+
+        # Process this cc
+        process_cc!(space, U, V, L, frange, rrange)
 
         for kj in klo:khi
             cj = targets(cc_to_cons)[kj]
 
             if cj <= k
-                schur_column_dense!(space, cache, x.X, w.X, L, problem, cj, kj, khi, fdsc:root)
+                schur_column_dense!(space, cache, x.X, w.X, L, problem, cj, kj, khi, frange)
             else
-                schur_column_sparse!(cache, problem, cj, kj, khi)
+                schur_column_sparse!(V, cache.chol, problem, cj, kj, khi, srange)
             end
         end
     end

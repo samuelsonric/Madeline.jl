@@ -5,6 +5,7 @@ const TIMER = TimerOutput()
 
 using LinearAlgebra
 using LinearAlgebra: dot, norm, tr, axpy!, axpby!, ldiv!, lmul!, rmul!, Hermitian, I, mul!
+using OffsetArrays: OffsetArray
 using LinearAlgebra.BLAS: BlasInt
 using SparseArrays: SparseMatrixCSC, rowvals, nonzeros, nzrange, nnz, sparse
 using Printf

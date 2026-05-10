@@ -94,7 +94,7 @@ function Solver(problem::Problem{T, J}) where {T<:Real, J<:Integer}
     wrk = PrimalDualSlack{:L, T}(m, S, G)
     res = PrimalDualSlack{:L, T}(m, S, G)
 
-    space = Workspace{T}(S, size(cache.U, 2))
+    space = Workspace{T}(S, problem.max_rhs_per_cc)
 
     curr = State{T}(n)
     prev = State{T}(n)

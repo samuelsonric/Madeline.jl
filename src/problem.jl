@@ -264,6 +264,9 @@ struct Problem{T, I}
     idxbwd::FVector{I}
     idxptr::FVector{I}
     nrhs::I
+    # Workspace sizing for OffsetArray optimization
+    max_rhs_per_cc::I
+    max_cc_rows::I
 end
 
 function Problem(
@@ -290,7 +293,26 @@ function Problem(
     cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
     idxfwd, idxbwd, idxptr, nrhs = touched(Ap, k, S, frnt_to_cc, ncc)
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs)
+    # Compute workspace sizes for OffsetArray optimization
+    I = typeof(ncc)
+    max_rhs_per_cc = zero(I)
+    for c in oneto(ncc)
+        rhs_count = idxptr[c + one(I)] - idxptr[c]
+        max_rhs_per_cc = max(max_rhs_per_cc, rhs_count)
+    end
+
+    res_ptr = S.res.ptr
+    max_cc_rows = zero(I)
+
+    for c in oneto(ncc)
+        fdsc = frtptr[c]
+        root = frtptr[c + one(I)] - one(I)
+        row_lo = res_ptr[fdsc]
+        row_hi = res_ptr[root + one(I)] - one(I)
+        max_cc_rows = max(max_cc_rows, row_hi - row_lo + one(I))
+    end
+
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows)
 end
 
 function Problem(
@@ -318,7 +340,8 @@ function Base.copy(problem::Problem)
         problem.indices_slack,
         problem.cgraph,
         problem.cc_to_cons,
-        problem.cc_to_pntr,
+        problem.cc_to_strt,
+        problem.cc_to_stop,
         problem.frnt_to_cc,
         problem.frtptr,
         problem.ncc,
@@ -326,6 +349,8 @@ function Base.copy(problem::Problem)
         problem.idxbwd,
         problem.idxptr,
         problem.nrhs,
+        problem.max_rhs_per_cc,
+        problem.max_cc_rows,
     )
 end
 
