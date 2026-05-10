@@ -136,49 +136,6 @@ function schur_entry_cc!(
     return
 end
 
-function build_schur_sparse_impl!(
-        cache::KKT{T},
-        problem::Problem{T, I},
-    ) where {T, I}
-    H = cache.chol.L
-    V = cache.V
-    A = problem.A
-    k = problem.k
-    idxbwd = problem.idxbwd
-    cc_to_cons = problem.cc_to_cons
-    cc_to_strt = problem.cc_to_strt
-    cc_to_stop = problem.cc_to_stop
-
-    n = convert(I, isqrt(size(A, 1)))
-
-    @inbounds for cc in oneto(problem.ncc)
-        lo = pointers(cc_to_cons)[cc]
-        hi = pointers(cc_to_cons)[cc + one(I)] - one(I)
-
-        for kj in lo:hi
-            cj = targets(cc_to_cons)[kj]
-            cj <= k && continue
-
-            pjstrt = targets(cc_to_strt)[kj]
-            pjstop = targets(cc_to_stop)[kj]
-
-            schur_entry_cc!(H, V, A, idxbwd, n, cj, cj, pjstrt, pjstop, pjstrt, pjstop)
-
-            for ki in kj + one(I):hi
-                ci = targets(cc_to_cons)[ki]
-                ci <= k && continue
-
-                pistrt = targets(cc_to_strt)[ki]
-                pistop = targets(cc_to_stop)[ki]
-
-                schur_entry_cc!(H, V, A, idxbwd, n, ci, cj, pistrt, pistop, pjstrt, pjstop)
-            end
-        end
-    end
-
-    return
-end
-
 function process_cc!(
         space::Workspace{T, J},
         cache::KKT{T},
@@ -197,32 +154,6 @@ function process_cc!(
     return
 end
 
-function build_schur_sparse!(
-        space::Workspace{T, J},
-        cache::KKT{T},
-        L::ChordalTriangular{:N, UPLO, T, J},
-        problem::Problem{T, J},
-    ) where {UPLO, T, J}
-    fill!(cache.U, zero(T))
-
-    for k in oneto(problem.nrhs)
-        cache.U[problem.idxfwd[k], k] = one(T)
-    end
-
-    @timeit TIMER "process_cc" for c in oneto(problem.ncc)
-        lo = problem.idxptr[c]
-        hi = problem.idxptr[c + one(J)] - one(J)
-        lo > hi && continue
-
-        fdsc = problem.frtptr[c]
-        root = problem.frtptr[c + one(J)] - one(J)
-        process_cc!(space, cache, L, lo, hi, fdsc, root)
-    end
-
-    @timeit TIMER "schur_impl" build_schur_sparse_impl!(cache, problem)
-    return
-end
-
 function build_schur!(
         space::Workspace{T, J},
         cache::KKT{T},
@@ -231,24 +162,35 @@ function build_schur!(
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
     ) where {UPLO, T, J}
-    m = size(cache.chol.L, 1)
     k = problem.k
     chol = cache.chol
+    H = chol.L
+    V = cache.V
     A = problem.A
     indices = problem.indices_primal
+    idxbwd = problem.idxbwd
     cc_to_cons = problem.cc_to_cons
     cc_to_strt = problem.cc_to_strt
     cc_to_stop = problem.cc_to_stop
 
+    n = convert(J, isqrt(size(A, 1)))
+
     setfactorzero!(chol)
 
-    @timeit TIMER "dense_schur" for cc in oneto(problem.ncc)
+    fill!(cache.U, zero(T))
+
+    for i in oneto(problem.nrhs)
+        cache.U[problem.idxfwd[i], i] = one(T)
+    end
+
+    @timeit TIMER "schur" for cc in oneto(problem.ncc)
         fdsc = problem.frtptr[cc]
         root = problem.frtptr[cc + one(J)] - one(J)
 
         lo = pointers(cc_to_cons)[cc]
         hi = pointers(cc_to_cons)[cc + one(J)] - one(J)
 
+        # --- Dense constraints: copytopacked / hessian / dotpacked ---
         for kj in lo:hi
             cj = targets(cc_to_cons)[kj]
             cj > k && continue
@@ -268,10 +210,35 @@ function build_schur!(
                 addfactorindex!(chol, dotpacked(w.X, A, indices, pistrt:pistop), ci, cj)
             end
         end
-    end
 
-    if k < m
-        @timeit TIMER "sparse_schur" build_schur_sparse!(space, cache, L, problem)
+        # --- Sparse constraints: process_cc! ---
+        slo = problem.idxptr[cc]
+        shi = problem.idxptr[cc + one(J)] - one(J)
+
+        if slo <= shi
+            process_cc!(space, cache, L, slo, shi, fdsc, root)
+
+            # --- Sparse-sparse Schur entries ---
+            for kj in lo:hi
+                cj = targets(cc_to_cons)[kj]
+                cj <= k && continue
+
+                pjstrt = targets(cc_to_strt)[kj]
+                pjstop = targets(cc_to_stop)[kj]
+
+                schur_entry_cc!(H, V, A, idxbwd, n, cj, cj, pjstrt, pjstop, pjstrt, pjstop)
+
+                for ki in kj + one(J):hi
+                    ci = targets(cc_to_cons)[ki]
+                    ci <= k && continue
+
+                    pistrt = targets(cc_to_strt)[ki]
+                    pistop = targets(cc_to_stop)[ki]
+
+                    schur_entry_cc!(H, V, A, idxbwd, n, ci, cj, pistrt, pistop, pjstrt, pjstop)
+                end
+            end
+        end
     end
 
     @timeit TIMER "chol_factor" factorize!(cache.chol)
