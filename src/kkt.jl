@@ -241,21 +241,31 @@ function build_schur!(
         shi = problem.idxptr[cc + one(J)] - one(J)
         ncols = shi - slo + one(J)
 
+        U = cache.U
+        V = cache.V
+
         if ispositive(ncols)
             rlo = L.S.res.ptr[fdsc]
             rhi = L.S.res.ptr[root + one(J)] - one(J)
             nrows = rhi - rlo + one(J)
 
-            U = view(cache.U, oneto(nrows), oneto(ncols))
-            V = view(cache.V, oneto(ncols), oneto(ncols))
+            for j in slo:shi
+                jloc = j - slo + one(J)
 
-            fill!(U, zero(T))
+                for i in rlo:rhi
+                    iloc = i - rlo + one(J)
 
-            for i in slo:shi
-                U[problem.idxfwd[i] - rlo + one(J), i - slo + one(J)] = one(T)
+                    if i == problem.idxfwd[j]
+                        α = one(T)
+                    else
+                        α = zero(T)
+                    end
+
+                    U[iloc, jloc] = α
+                end
             end
 
-            process_cc!(space, U, V, L, frange, rlo:rhi)
+            process_cc!(space, view(U, oneto(nrows), oneto(ncols)), view(V, oneto(ncols), oneto(ncols)), L, frange, rlo:rhi)
         end
 
         for kj in klo:khi
@@ -264,7 +274,7 @@ function build_schur!(
             if cj <= k
                 schur_column_dense!(space, cache, x.X, w.X, L, problem, cj, kj, khi, frange)
             else
-                schur_column_sparse!(V, cache.chol, problem, cj, kj, khi, slo:shi)
+                schur_column_sparse!(view(V, oneto(ncols), oneto(ncols)), cache.chol, problem, cj, kj, khi, slo:shi)
             end
         end
     end
