@@ -242,7 +242,7 @@ function build_schur!(
     chol = cache.chol
     cc_to_cons = problem.cc_to_cons
 
-    setfactorzero!(chol)
+    setzero!(chol)
 
     @timeit TIMER "schur" for cc in oneto(problem.ncc)
         fdsc = problem.frtptr[cc]
@@ -280,7 +280,7 @@ function build_schur!(
             end
         end
 
-        addfactorclique!(chol, cache.W, neighbors(cc_to_cons, cc))
+        addclique!(chol, cache.W, neighbors(cc_to_cons, cc))
     end
 
     @timeit TIMER "chol_factor" factorize!(cache.chol)

@@ -19,31 +19,21 @@ function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
     return chol
 end
 
-@propagate_inbounds function setfactorindex!(chol::DenseCholeskyPivoted{T}, v::T, i::Integer, j::Integer) where {T}
-    @boundscheck checkbounds(chol.L, i, j)
-    @inbounds chol.L[i, j] = v
-    return chol
-end
-
-@propagate_inbounds function addfactorindex!(chol::DenseCholeskyPivoted{T}, v::T, i::Integer, j::Integer) where {T}
-    @boundscheck checkbounds(chol.L, i, j)
-    @inbounds chol.L[i, j] += v
-    return chol
-end
-
-function setfactorzero!(chol::DenseCholeskyPivoted{T}) where {T}
+function setzero!(chol::DenseCholeskyPivoted{T}) where {T}
     fill!(chol.L, zero(T))
     return chol
 end
 
-function addfactorclique!(chol::DenseCholeskyPivoted{T}, W::AbstractMatrix{T}, clique::AbstractVector{I}) where {T, I}
-    @inbounds for (jloc, cj) in enumerate(clique)
-        for (iloc, ci) in enumerate(clique)
-            if ci >= cj
-                chol.L[ci, cj] += W[iloc, jloc]
-            end
+function addclique!(chol::DenseCholeskyPivoted{T}, W::AbstractMatrix{T}, clique::AbstractVector{I}) where {T, I}
+    @inbounds for jloc in eachindex(clique)
+        cj = clique[jloc]
+
+        for iloc in jloc:length(clique)
+            ci = clique[iloc]
+            chol.L[ci, cj] += W[iloc, jloc]
         end
     end
+
     return chol
 end
 
