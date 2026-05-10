@@ -4,18 +4,18 @@
 # The homogenization appears as a rank-2 skew lift on a symmetric base.
 #
 # Storage:
-#   - chol: pivoted Cholesky factor of S̄ = A₂H₂₂⁻¹A₂* + h_τ²bb*
-#   - Γ: half-solved cache vectors [u v] where u = ωL⁻¹b, v = L⁻¹(Aη)
+#   - chol: pivoted Cholesky factor of S₀ = A₂H₂₂⁻¹A₂*
+#   - Γ: half-solved cache vectors [u₀ c₀] where u₀ = L⁻¹b, c₀ = L⁻¹(Aη)
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
 #   - U, V: workspace for sparse constraint Schur complement
 struct KKT{T, I}
     chol::Chol{T}
-    Γ::FMatrix{T}                             # [u v] half-solved vectors (m × 2)
-    Σ::FMatrix{T}                             # 2×2 capacitance
-    γ::FVector{T}                             # Σ⁻¹ξ solution
-    U::FMatrix{T}                             # workspace for sparse constraints (n × nrhs)
-    V::FMatrix{T}                             # W^T W for sparse constraints (nrhs × nrhs)
+    Γ::FMatrix{T}                       # [q c₀] after build_kkt!
+    Σ::FMatrix{T}                       # 2×2 capacitance
+    γ::FVector{T}                       # Σ⁻¹ξ solution
+    U::FMatrix{T}                       # workspace for sparse constraints (n × nrhs)
+    V::FMatrix{T}                       # W^T W for sparse constraints (nrhs × nrhs)
 end
 
 function KKT{T}(problem::Problem{T, I}) where {T, I}
@@ -242,16 +242,7 @@ function build_schur!(
     cgraph = problem.cgraph
     chol = cache.chol
 
-    ω = x.τ^2
-    b = problem.b
-
-    @timeit TIMER "b_outer" @inbounds for j in oneto(m)
-        bj = ω * b[j]
-
-        for i in j:m
-            setfactorindex!(chol, i, j, b[i] * bj)
-        end
-    end
+    fill!(H, zero(T))
 
     @timeit TIMER "dense_schur" for j in oneto(problem.k)
         copytopacked!(w, problem.A, problem.indices_primal, problem.b, j)
@@ -294,24 +285,32 @@ function build_kkt!(
 
     w.τ = one(T)
     copyto!(w.X, problem.C)
-    hessian!(space, L, x, w, Val(false))
+    hessian!(space, L, x, w, Val(false))    # w.X = H₂₂⁻¹·C ; w.τ = ω
 
-    u = @view cache.Γ[:, 1]
-    v = @view cache.Γ[:, 2]
+    Γ₁ = view(cache.Γ, :, 1)
+    Γ₂ = view(cache.Γ, :, 2)
 
-    copyto!(u, problem.b)
-    rmul!(u, w.τ)
-    apply_constraint!(problem.A, problem.indices_primal, w.X, v, one(T), zero(T), Val(true))
-    ldiv_fwd!(cache.chol, cache.Γ)
+    copyto!(Γ₁, problem.b)
+    apply_constraint!(problem.A, problem.indices_primal, w.X, Γ₂, one(T), zero(T), Val(true))
+    ldiv_fwd!(cache.chol, cache.Γ)          # Γ ← [u₀ | c₀]
 
-    syrk!(Val(:L), Val(:T), -one(T), cache.Γ, zero(T), cache.Σ)
+    # Gram block of [u₀ | c₀]
+    syrk!(Val(:L), Val(:T), one(T), cache.Γ, zero(T), cache.Σ)
     symmtri!(cache.Σ, Val(:L))
 
-    cache.Σ[1, 1] += w.τ
-    cache.Σ[2, 1] += σ
-    cache.Σ[1, 2] -= σ
-    cache.Σ[2, 2] += symdot(w.X, problem.C)
+    ldiv_bwd!(cache.chol, Γ₁)               # Γ[:,1]: u₀ → q
 
+    Σ₁₁ = cache.Σ[1, 1]
+    Σ₂₁ = cache.Σ[2, 1]
+    Σ₂₂ = cache.Σ[2, 2]
+
+    ω = w.τ
+    α = ω / (one(T) + ω * Σ₁₁)
+
+    cache.Σ[1, 1] = α
+    cache.Σ[2, 1] =  σ - α * Σ₂₁
+    cache.Σ[1, 2] = -σ - α * Σ₂₁
+    cache.Σ[2, 2] = symdot(w.X, problem.C) - Σ₂₂ + α * Σ₂₁ * Σ₂₁
     return
 end
 
@@ -338,6 +337,7 @@ function solve_kkt!(
         σ = inv(μ)
     end
 
+    # ===== Stage A =====
     copyto!(dir.primal, rhs.slack)
 
     if SCALE
@@ -352,22 +352,38 @@ function solve_kkt!(
 
     copyto!(dir.dual, rhs.dual)
     apply_constraint!(problem.A, problem.indices_primal, problem.b, dir.primal, dir.dual, one(T), σ, Val(true))
+
+    # ===== Stage B ξ build =====
+    Γ₁ = view(cache.Γ, :, 1)
+    Γ₂ = view(cache.Γ, :, 2)
+
+    t₁ = dot(Γ₁, dir.dual)                         # ⟨q, ρ_A⟩ (pre-fwd)
+
     ldiv_fwd!(cache.chol, dir.dual)
 
-    cache.γ[1] =  dir.primal.τ
-    cache.γ[2] = -symdot(problem.C, dir.primal.X)
+    t₂ = dot(Γ₂, dir.dual)                         # ⟨c₀, ρ̃_A⟩
 
-    gemv!(Val(:T), one(T), cache.Γ, dir.dual, one(T), cache.γ)
+    cache.γ[1] =  dir.primal.τ                    +      cache.Σ[1, 1]  * t₁
+    cache.γ[2] = -symdot(problem.C, dir.primal.X) - (σ - cache.Σ[2, 1]) * t₁ + t₂
+
     solve2x2!(cache.Σ, cache.γ)
-    gemv!(Val(:N), one(T), cache.Γ, cache.γ, one(T), dir.dual)
+
+    # ===== Stage B post-solve injection (c₀ only) =====
+    axpy!(cache.γ[2], Γ₂, dir.dual)
 
     copyto!(dir.slack, rhs.slack)
     ldiv_bwd!(cache.chol, dir.dual)
+
+    # ===== SMW correction =====
+    axpy!(dir.primal.τ + σ * cache.γ[2], Γ₁, dir.dual)
+
+    # ===== Stage C =====
     apply_constraint!(problem.A, problem.indices_slack, problem.b, dir.slack, dir.dual, -one(T), one(T), Val(false))
 
     dir.slack.τ -= cache.γ[1]
     axpy_subset!(cache.γ[2], problem.C, dir.slack.X)
 
+    # ===== Stage D =====
     copyto!(dir.primal, dir.slack)
 
     if SCALE
