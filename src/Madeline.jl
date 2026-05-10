@@ -53,7 +53,7 @@ const SPARSITY_THRESHOLD = 0.1
 include("point.jl")
 include("primal_dual_slack.jl")
 include("problem.jl")
-include("chol.jl")
+include("cholesky/cholesky.jl")
 include("workspace.jl")
 include("settings.jl")
 include("state.jl")

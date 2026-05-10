@@ -11,7 +11,7 @@
 #   - γ: 2-vector for Σ⁻¹ξ solution
 #   - ρ: ⟨u₀, c₀⟩
 mutable struct KKT{T, I}
-    const chol::Chol{T}
+    const chol::DenseCholeskyPivoted{T}
     const U::FMatrix{T}                 # workspace for sparse constraints (n × nrhs)
     const V::FMatrix{T}                 # W^T W for sparse constraints (nrhs × nrhs)
     const Γ::FMatrix{T}                 # [u₀ c₀] after build_kkt!
@@ -25,7 +25,7 @@ function KKT{T}(problem::Problem{T, I}) where {T, I}
     m = size(problem.A, 2)
     nrhs = problem.nrhs
 
-    chol = Chol{T}(m)
+    chol = DenseCholeskyPivoted{T}(m)
     U = FMatrix{T}(undef, n, nrhs)
     V = FMatrix{T}(undef, nrhs, nrhs)
     Γ = FMatrix{T}(undef, m, 2)

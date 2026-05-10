@@ -1,4 +1,4 @@
-mutable struct Chol{T}
+mutable struct DenseCholeskyPivoted{T} <: AbstractCholesky{T}
     const L::FMatrix{T}
     const perm::FVector{BlasInt}
     const work::FVector{T}
@@ -6,35 +6,35 @@ mutable struct Chol{T}
     rank::Int
 end
 
-function Chol{T}(m::Integer) where {T}
+function DenseCholeskyPivoted{T}(m::Integer) where {T}
     L = FMatrix{T}(undef, m, m)
     perm = FVector{BlasInt}(undef, m)
     work = FVector{T}(undef, 2m)
     temp = FVector{T}(undef, m)
-    return Chol(L, perm, work, temp, 0)
+    return DenseCholeskyPivoted(L, perm, work, temp, 0)
 end
 
-function factorize!(chol::Chol{T}) where {T}
+function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
     _, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm, -one(T))
     return chol
 end
 
-function setfactorindex!(chol::Chol{T}, i::Integer, j::Integer, v::T) where {T}
+function setfactorindex!(chol::DenseCholeskyPivoted{T}, i::Integer, j::Integer, v::T) where {T}
     chol.L[i, j] = v
     return chol
 end
 
-function addfactorindex!(chol::Chol{T}, i::Integer, j::Integer, v::T) where {T}
+function addfactorindex!(chol::DenseCholeskyPivoted{T}, i::Integer, j::Integer, v::T) where {T}
     chol.L[i, j] += v
     return chol
 end
 
-function setfactorzero!(chol::Chol{T}) where {T}
+function setfactorzero!(chol::DenseCholeskyPivoted{T}) where {T}
     fill!(chol.L, zero(T))
     return chol
 end
 
-function ldiv_fwd!(chol::Chol{T}, b::AbstractVector{T}) where {T}
+function ldiv_fwd!(chol::DenseCholeskyPivoted{T}, b::AbstractVector{T}) where {T}
     @inbounds for i in 1:chol.rank
         chol.temp[i] = b[chol.perm[i]]
     end
@@ -56,7 +56,7 @@ function ldiv_fwd!(chol::Chol{T}, b::AbstractVector{T}) where {T}
     return b
 end
 
-function ldiv_fwd!(chol::Chol{T}, B::AbstractMatrix{T}) where {T}
+function ldiv_fwd!(chol::DenseCholeskyPivoted{T}, B::AbstractMatrix{T}) where {T}
     @inbounds for j in axes(B, 2)
         for i in 1:chol.rank
             chol.temp[i] = B[chol.perm[i], j]
@@ -80,7 +80,7 @@ function ldiv_fwd!(chol::Chol{T}, B::AbstractMatrix{T}) where {T}
     return B
 end
 
-function ldiv_bwd!(chol::Chol, b::AbstractVector)
+function ldiv_bwd!(chol::DenseCholeskyPivoted, b::AbstractVector)
     if ispositive(chol.rank)
         Lr = view(chol.L, 1:chol.rank, 1:chol.rank)
         br = view(b,      1:chol.rank)
