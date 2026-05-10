@@ -14,7 +14,7 @@ mutable struct KKT{T, I}
     const chol::Chol{T}
     const U::FMatrix{T}                 # workspace for sparse constraints (n × nrhs)
     const V::FMatrix{T}                 # W^T W for sparse constraints (nrhs × nrhs)
-    const Γ::FMatrix{T}                 # [q c₀] after build_kkt!
+    const Γ::FMatrix{T}                 # [u₀ c₀] after build_kkt!
     const Σ::FMatrix{T}                 # 2×2 capacitance
     const γ::FVector{T}                 # Σ⁻¹ξ solution
     ρ::T                                # ⟨u₀, c₀⟩
@@ -300,8 +300,6 @@ function build_kkt!(
     syrk!(Val(:L), Val(:T), one(T), cache.Γ, zero(T), cache.Σ)
     symmtri!(cache.Σ, Val(:L))
 
-    ldiv_bwd!(cache.chol, Γ₁)               # Γ[:,1]: u₀ → q
-
     Σ₁₁ = cache.Σ[1, 1]
     Σ₂₁ = cache.Σ[2, 1]
     Σ₂₂ = cache.Σ[2, 2]
@@ -362,23 +360,21 @@ function solve_kkt!(
     cache.γ[1] =  dir.primal.τ
     cache.γ[2] = -symdot(problem.C, dir.primal.X)
 
-    Δ = cache.Σ[1, 1] * dot(Γ₁, dir.dual)
-
-    cache.γ[1] += Δ
-    cache.γ[2] += Δ * -cache.ρ
-
     ldiv_fwd!(cache.chol, dir.dual)
 
-    cache.γ[2] += dot(Γ₂, dir.dual)
+    Δ = cache.Σ[1, 1] * dot(Γ₁, dir.dual)
+
+    cache.γ[1] +=                     Δ
+    cache.γ[2] += dot(Γ₂, dir.dual) - Δ * cache.ρ
 
     solve2x2!(cache.Σ, cache.γ)
 
-    axpy!(cache.γ[2], Γ₂, dir.dual)
+    axpy!(cache.γ[2] * σ + dir.primal.τ, Γ₁, dir.dual)
+    axpy!(cache.γ[2],                    Γ₂, dir.dual)
 
-    copyto!(dir.slack, rhs.slack)
     ldiv_bwd!(cache.chol, dir.dual)
 
-    axpy!(dir.primal.τ + σ * cache.γ[2], Γ₁, dir.dual)
+    copyto!(dir.slack, rhs.slack)
     apply_constraint!(problem.A, problem.indices_slack, problem.b, dir.slack, dir.dual, -one(T), one(T), Val(false))
 
     dir.slack.τ -= cache.γ[1]
