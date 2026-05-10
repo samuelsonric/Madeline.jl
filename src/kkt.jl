@@ -232,23 +232,45 @@ function build_schur!(
         problem::Problem{T, J},
     ) where {UPLO, T, J}
     m = size(cache.chol.L, 1)
-    cgraph = problem.cgraph
+    k = problem.k
     chol = cache.chol
+    A = problem.A
+    indices = problem.indices_primal
+    cc_to_cons = problem.cc_to_cons
+    cc_to_strt = problem.cc_to_strt
+    cc_to_stop = problem.cc_to_stop
 
     setfactorzero!(chol)
 
-    @timeit TIMER "dense_schur" for j in oneto(problem.k)
-        copytopacked!(w.X, problem.A, problem.indices_primal, j)
-        hessian!(space, L, x, w, Val(false))
+    @timeit TIMER "dense_schur" for cc in oneto(problem.ncc)
+        fdsc = problem.frtptr[cc]
+        root = problem.frtptr[cc + one(J)] - one(J)
 
-        addfactorindex!(chol, dotpacked(w.X, problem.A, problem.indices_primal, j), j, j)
+        lo = pointers(cc_to_cons)[cc]
+        hi = pointers(cc_to_cons)[cc + one(J)] - one(J)
 
-        for i in neighbors(cgraph, j)
-            addfactorindex!(chol, dotpacked(w.X, problem.A, problem.indices_primal, i), i, j)
+        for kj in lo:hi
+            cj = targets(cc_to_cons)[kj]
+            cj > k && continue
+
+            pjstrt = targets(cc_to_strt)[kj]
+            pjstop = targets(cc_to_stop)[kj]
+
+            copytopacked!(w.X, A, indices, pjstrt:pjstop)
+            hessian!(space, L, x, w, Val(false), fdsc:root)
+
+            addfactorindex!(chol, dotpacked(w.X, A, indices, pjstrt:pjstop), cj, cj)
+
+            for ki in kj + one(J):hi
+                ci = targets(cc_to_cons)[ki]
+                pistrt = targets(cc_to_strt)[ki]
+                pistop = targets(cc_to_stop)[ki]
+                addfactorindex!(chol, dotpacked(w.X, A, indices, pistrt:pistop), ci, cj)
+            end
         end
     end
 
-    if problem.k < m
+    if k < m
         @timeit TIMER "sparse_schur" build_schur_sparse!(space, cache, L, problem)
     end
 

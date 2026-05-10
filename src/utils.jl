@@ -62,27 +62,11 @@ end
 #
 function dotpacked(
         X::ChordalTriangular{:N, :L, T, I},
-        A::SparseMatrixCSC{T},
+        A::SparseMatrixCSC{T, I},
         indices::AbstractVector{I},
         c::Int,
     ) where {T, I}
-    n = convert(I, isqrt(size(A, 1)))
-    out = zero(T)
-
-    @inbounds for p in nzrange(A, c)
-        i, j = cart(n, rowvals(A)[p])
-
-        Aij = nonzeros(A)[p]
-        Xij = getflatindex(X, indices[p])
-
-        out += Δ = Aij * Xij
-
-        if i != j
-            out += conj(Δ)
-        end
-    end
-
-    return real(out)
+    return dotpacked(X, A, indices, nzrange(A, c))
 end
 
 # copy
@@ -92,6 +76,15 @@ end
 function copytopacked!(Y::AbstractMatrix, A::SparseMatrixCSC, indices::AbstractVector, c::Integer)
     fill!(Y, false)
     return axpypacked!(true, A, indices, c, Y)
+end
+
+function copytopacked!(
+        Y::ChordalTriangular{:N, :L, T, I},
+        A::SparseMatrixCSC{T, I},
+        indices::AbstractVector{I},
+        c::Integer,
+    ) where {T, I}
+    return copytopacked!(Y, A, indices, nzrange(A, c))
 end
 
 # copy
@@ -118,13 +111,12 @@ function dotpacked(
         X::ChordalTriangular{:N, :L, T, I},
         A::SparseMatrixCSC{T, I},
         indices::AbstractVector{I},
-        pstrt::I,
-        pstop::I,
+        range::AbstractRange{I},
     ) where {T, I}
     n = convert(I, isqrt(size(A, 1)))
     out = zero(T)
 
-    @inbounds for p in pstrt:pstop
+    @inbounds for p in range
         i, j = cart(n, rowvals(A)[p])
 
         Aij = nonzeros(A)[p]
@@ -166,18 +158,46 @@ end
 #
 function axpypacked!(
         α::Number,
-        A::SparseMatrixCSC{T},
+        A::SparseMatrixCSC{T, I},
         indices::AbstractVector{I},
         c::Int,
         Y::ChordalTriangular{:N, :L, T, I},
     ) where {T, I}
-    @inbounds for p in nzrange(A, c)
+    return axpypacked!(α, A, indices, Y, nzrange(A, c))
+end
+
+# compute the sum-product (range-restricted)
+#
+#     Y ← Y + α A[range]
+#
+function axpypacked!(
+        α::Number,
+        A::SparseMatrixCSC{T},
+        indices::AbstractVector{I},
+        Y::ChordalTriangular{:N, :L, T, I},
+        range::AbstractRange{I},
+    ) where {T, I}
+    @inbounds for p in range
         v = nonzeros(A)[p]
         idx = indices[p]
         setflatindex!(Y, getflatindex(Y, idx) + α * v, idx)
     end
 
     return Y
+end
+
+# copy (range-restricted)
+#
+#     Y ← A[range]
+#
+function copytopacked!(
+        Y::ChordalTriangular{:N, :L, T, I},
+        A::SparseMatrixCSC{T},
+        indices::AbstractVector{I},
+        range::AbstractRange{I},
+    ) where {T, I}
+    fill!(Y, zero(T))
+    return axpypacked!(one(T), A, indices, Y, range)
 end
 
 # compute the sum-product
