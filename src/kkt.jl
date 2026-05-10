@@ -287,16 +287,15 @@ function build_kkt!(
 
     w.τ = one(T)
     copyto!(w.X, problem.C)
-    hessian!(space, L, x, w, Val(false))    # w.X = H₂₂⁻¹·C ; w.τ = ω
+    hessian!(space, L, x, w, Val(false))
 
     Γ₁ = view(cache.Γ, :, 1)
     Γ₂ = view(cache.Γ, :, 2)
 
     copyto!(Γ₁, problem.b)
     apply_constraint!(problem.A, problem.indices_primal, w.X, Γ₂, one(T), zero(T), Val(true))
-    ldiv_fwd!(cache.chol, cache.Γ)          # Γ ← [u₀ | c₀]
+    ldiv_fwd!(cache.chol, cache.Γ)
 
-    # Gram block of [u₀ | c₀]
     syrk!(Val(:L), Val(:T), one(T), cache.Γ, zero(T), cache.Σ)
     symmtri!(cache.Σ, Val(:L))
 
