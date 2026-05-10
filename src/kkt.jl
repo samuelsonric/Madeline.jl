@@ -8,6 +8,7 @@
 #   - Γ: half-solved cache vectors [u₀ c₀] where u₀ = L⁻¹b, c₀ = L⁻¹(Aη)
 #   - U, V: small workspaces for sparse constraint Schur complement
 #                 (sized for largest connected component, reused via OffsetArrays)
+#   - W: clique workspace for Schur complement assembly (max_cons_per_cc × max_cons_per_cc)
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
 #   - ρ: ⟨u₀, c₀⟩
@@ -15,10 +16,11 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     const chol::Chol
     const U::FMatrix{T}              # workspace for sparse constraints (max_cc_rows × max_rhs_per_cc)
     const V::FMatrix{T}              # W^T W workspace (max_rhs_per_cc × max_rhs_per_cc)
-    const Γ::FMatrix{T}                 # [u₀ c₀] after build_kkt!
-    const Σ::FMatrix{T}                 # 2×2 capacitance
-    const γ::FVector{T}                 # Σ⁻¹ξ solution
-    ρ::T                                # ⟨u₀, c₀⟩
+    const W::FMatrix{T}              # clique workspace (max_cons_per_cc × max_cons_per_cc)
+    const Γ::FMatrix{T}              # [u₀ c₀] after build_kkt!
+    const Σ::FMatrix{T}              # 2×2 capacitance
+    const γ::FVector{T}              # Σ⁻¹ξ solution
+    ρ::T                             # ⟨u₀, c₀⟩
 end
 
 function KKT{T}(problem::Problem{T}) where {T}
@@ -27,10 +29,11 @@ function KKT{T}(problem::Problem{T}) where {T}
     chol = DenseCholeskyPivoted{T}(m)
     U = FMatrix{T}(undef, problem.max_cc_rows, problem.max_rhs_per_cc)
     V = FMatrix{T}(undef, problem.max_rhs_per_cc, problem.max_rhs_per_cc)
+    W = FMatrix{T}(undef, problem.max_cons_per_cc, problem.max_cons_per_cc)
     Γ = FMatrix{T}(undef, m, 2)
     Σ = FMatrix{T}(undef, 2, 2)
     γ = FVector{T}(undef, 2)
-    return KKT(chol, U, V, Γ, Σ, γ, zero(T))
+    return KKT(chol, U, V, W, Γ, Σ, γ, zero(T))
 end
 
 # ===== Schur complement =====
@@ -135,33 +138,33 @@ function schur_column_dense!(
         space::Workspace{T, J},
         cache::KKT{T},
         X::ChordalTriangular{:N, UPLO, T, J},
-        W::ChordalTriangular{:N, UPLO, T, J},
+        Wchol::ChordalTriangular{:N, UPLO, T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
-        cj::J,
+        klo::J,
         kj::J,
         khi::J,
         frange::AbstractRange{J},
     ) where {UPLO, T, J}
     A = problem.A
     indices = problem.indices_primal
-    cc_to_cons = problem.cc_to_cons
     cc_to_strt = problem.cc_to_strt
     cc_to_stop = problem.cc_to_stop
-    chol = cache.chol
 
     pjstrt = targets(cc_to_strt)[kj]
     pjstop = targets(cc_to_stop)[kj]
 
-    copytopacked!(W, A, indices, pjstrt:pjstop)
-    hessian!(space, W, L, X, Val(false), frange)
-    addfactorindex!(chol, dotpacked(W, A, indices, pjstrt:pjstop), cj, cj)
+    copytopacked!(Wchol, A, indices, pjstrt:pjstop)
+    hessian!(space, Wchol, L, X, Val(false), frange)
+
+    jloc = kj - klo + one(J)
+    cache.W[jloc, jloc] = dotpacked(Wchol, A, indices, pjstrt:pjstop)
 
     for ki in kj + one(J):khi
-        ci = targets(cc_to_cons)[ki]
         pistrt = targets(cc_to_strt)[ki]
         pistop = targets(cc_to_stop)[ki]
-        addfactorindex!(chol, dotpacked(W, A, indices, pistrt:pistop), ci, cj)
+        iloc = ki - klo + one(J)
+        cache.W[iloc, jloc] = dotpacked(Wchol, A, indices, pistrt:pistop)
     end
 
     return
@@ -170,7 +173,7 @@ end
 function schur_column_sparse!(
         cache::KKT{T},
         problem::Problem{T, J},
-        cj::J,
+        klo::J,
         kj::J,
         khi::J,
         srange::AbstractRange{J},
@@ -178,19 +181,20 @@ function schur_column_sparse!(
     pjstrt = targets(problem.cc_to_strt)[kj]
     pjstop = targets(problem.cc_to_stop)[kj]
 
-    addfactorindex!(cache.chol, schur_entry_sparse(cache.V, problem.A, problem.idxbwd, srange, pjstrt:pjstop, pjstrt:pjstop), cj, cj)
+    jloc = kj - klo + one(J)
+    cache.W[jloc, jloc] = schur_entry_sparse(cache.V, problem.A, problem.idxbwd, srange, pjstrt:pjstop, pjstrt:pjstop)
 
     for ki in kj + one(J):khi
-        ci = targets(problem.cc_to_cons)[ki]
         pistrt = targets(problem.cc_to_strt)[ki]
         pistop = targets(problem.cc_to_stop)[ki]
-        addfactorindex!(cache.chol, schur_entry_sparse(cache.V, problem.A, problem.idxbwd, srange, pistrt:pistop, pjstrt:pjstop), ci, cj)
+        iloc = ki - klo + one(J)
+        cache.W[iloc, jloc] = schur_entry_sparse(cache.V, problem.A, problem.idxbwd, srange, pistrt:pistop, pjstrt:pjstop)
     end
 
     return
 end
 
-function process_cc!(
+function schur_prepare_sparse!(
         space::Workspace{T, J},
         cache::KKT{T},
         problem::Problem{T, J},
@@ -254,18 +258,29 @@ function build_schur!(
         if slo <= shi
             rlo = L.S.res.ptr[fdsc]
             rhi = L.S.res.ptr[root + one(J)] - one(J)
-            process_cc!(space, cache, problem, L, fdsc:root, rlo:rhi, slo:shi)
+            schur_prepare_sparse!(space, cache, problem, L, fdsc:root, rlo:rhi, slo:shi)
+        end
+
+        for kj in klo:khi
+            jloc = kj - klo + one(J)
+
+            for ki in kj:khi
+                iloc = ki - klo + one(J)
+                cache.W[iloc, jloc] = zero(T)
+            end
         end
 
         for kj in klo:khi
             cj = targets(cc_to_cons)[kj]
 
             if cj <= k
-                schur_column_dense!(space, cache, x.X, w.X, L, problem, cj, kj, khi, frange)
+                schur_column_dense!(space, cache, x.X, w.X, L, problem, klo, kj, khi, frange)
             else
-                schur_column_sparse!(cache, problem, cj, kj, khi, slo:shi)
+                schur_column_sparse!(cache, problem, klo, kj, khi, slo:shi)
             end
         end
+
+        addfactorclique!(chol, cache.W, neighbors(cc_to_cons, cc))
     end
 
     @timeit TIMER "chol_factor" factorize!(cache.chol)

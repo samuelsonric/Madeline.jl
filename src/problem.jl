@@ -267,6 +267,7 @@ struct Problem{T, I}
     # Workspace sizing for OffsetArray optimization
     max_rhs_per_cc::I
     max_cc_rows::I
+    max_cons_per_cc::I
 end
 
 function Problem(
@@ -312,7 +313,13 @@ function Problem(
         max_cc_rows = max(max_cc_rows, row_hi - row_lo + one(I))
     end
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows)
+    max_cons_per_cc = zero(I)
+    for c in oneto(ncc)
+        cons_count = pointers(cc_to_cons)[c + one(I)] - pointers(cc_to_cons)[c]
+        max_cons_per_cc = max(max_cons_per_cc, cons_count)
+    end
+
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc)
 end
 
 function Problem(
@@ -351,6 +358,7 @@ function Base.copy(problem::Problem)
         problem.nrhs,
         problem.max_rhs_per_cc,
         problem.max_cc_rows,
+        problem.max_cons_per_cc,
     )
 end
 

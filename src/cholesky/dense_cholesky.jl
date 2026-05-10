@@ -31,6 +31,17 @@ function setfactorzero!(chol::DenseCholesky{T}) where {T}
     return chol
 end
 
+function addfactorclique!(chol::DenseCholesky{T}, W::AbstractMatrix{T}, clique::AbstractVector{I}) where {T, I}
+    @inbounds for (jloc, cj) in enumerate(clique)
+        for (iloc, ci) in enumerate(clique)
+            if ci >= cj
+                chol.L[ci, cj] += W[iloc, jloc]
+            end
+        end
+    end
+    return chol
+end
+
 function ldiv_fwd!(chol::DenseCholesky{T}, b::AbstractVector{T}) where {T}
     trsv!(Val(:L), Val(:N), Val(:N), chol.L, b)
     return b

@@ -36,6 +36,17 @@ function setfactorzero!(chol::DenseCholeskyPivoted{T}) where {T}
     return chol
 end
 
+function addfactorclique!(chol::DenseCholeskyPivoted{T}, W::AbstractMatrix{T}, clique::AbstractVector{I}) where {T, I}
+    @inbounds for (jloc, cj) in enumerate(clique)
+        for (iloc, ci) in enumerate(clique)
+            if ci >= cj
+                chol.L[ci, cj] += W[iloc, jloc]
+            end
+        end
+    end
+    return chol
+end
+
 function ldiv_fwd!(chol::DenseCholeskyPivoted{T}, b::AbstractVector{T}) where {T}
     @inbounds for i in 1:chol.rank
         chol.temp[i] = b[chol.perm[i]]
