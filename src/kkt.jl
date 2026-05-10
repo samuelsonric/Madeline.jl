@@ -6,16 +6,18 @@
 # Storage:
 #   - chol: pivoted Cholesky factor of S₀ = A₂H₂₂⁻¹A₂*
 #   - Γ: half-solved cache vectors [u₀ c₀] where u₀ = L⁻¹b, c₀ = L⁻¹(Aη)
+#   - U, V: workspace for sparse constraint Schur complement
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
-#   - U, V: workspace for sparse constraint Schur complement
-struct KKT{T, I}
-    chol::Chol{T}
-    Γ::FMatrix{T}                       # [q c₀] after build_kkt!
-    Σ::FMatrix{T}                       # 2×2 capacitance
-    γ::FVector{T}                       # Σ⁻¹ξ solution
-    U::FMatrix{T}                       # workspace for sparse constraints (n × nrhs)
-    V::FMatrix{T}                       # W^T W for sparse constraints (nrhs × nrhs)
+#   - ρ: ⟨u₀, c₀⟩
+mutable struct KKT{T, I}
+    const chol::Chol{T}
+    const U::FMatrix{T}                 # workspace for sparse constraints (n × nrhs)
+    const V::FMatrix{T}                 # W^T W for sparse constraints (nrhs × nrhs)
+    const Γ::FMatrix{T}                 # [q c₀] after build_kkt!
+    const Σ::FMatrix{T}                 # 2×2 capacitance
+    const γ::FVector{T}                 # Σ⁻¹ξ solution
+    ρ::T                                # ⟨u₀, c₀⟩
 end
 
 function KKT{T}(problem::Problem{T, I}) where {T, I}
@@ -24,12 +26,12 @@ function KKT{T}(problem::Problem{T, I}) where {T, I}
     nrhs = problem.nrhs
 
     chol = Chol{T}(m)
+    U = FMatrix{T}(undef, n, nrhs)
+    V = FMatrix{T}(undef, nrhs, nrhs)
     Γ = FMatrix{T}(undef, m, 2)
     Σ = FMatrix{T}(undef, 2, 2)
     γ = FVector{T}(undef, 2)
-    U = FMatrix{T}(undef, n, nrhs)
-    V = FMatrix{T}(undef, nrhs, nrhs)
-    return KKT{T, I}(chol, Γ, Σ, γ, U, V)
+    return KKT{T, I}(chol, U, V, Γ, Σ, γ, zero(T))
 end
 
 # ===== Schur complement =====
@@ -311,6 +313,8 @@ function build_kkt!(
     cache.Σ[2, 1] =  σ - α * Σ₂₁
     cache.Σ[1, 2] = -σ - α * Σ₂₁
     cache.Σ[2, 2] = symdot(w.X, problem.C) - Σ₂₂ + α * Σ₂₁ * Σ₂₁
+
+    cache.ρ = Σ₂₁
     return
 end
 
@@ -357,14 +361,17 @@ function solve_kkt!(
     Γ₁ = view(cache.Γ, :, 1)
     Γ₂ = view(cache.Γ, :, 2)
 
-    t₁ = dot(Γ₁, dir.dual)                         # ⟨q, ρ_A⟩ (pre-fwd)
+    cache.γ[1] =  dir.primal.τ
+    cache.γ[2] = -symdot(problem.C, dir.primal.X)
+
+    Δ = cache.Σ[1, 1] * dot(Γ₁, dir.dual)
+
+    cache.γ[1] += Δ
+    cache.γ[2] -= Δ * cache.ρ
 
     ldiv_fwd!(cache.chol, dir.dual)
 
-    t₂ = dot(Γ₂, dir.dual)                         # ⟨c₀, ρ̃_A⟩
-
-    cache.γ[1] =  dir.primal.τ                    +      cache.Σ[1, 1]  * t₁
-    cache.γ[2] = -symdot(problem.C, dir.primal.X) - (σ - cache.Σ[2, 1]) * t₁ + t₂
+    cache.γ[2] += dot(Γ₂, dir.dual)
 
     solve2x2!(cache.Σ, cache.γ)
 
