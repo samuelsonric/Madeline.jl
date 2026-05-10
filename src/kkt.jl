@@ -341,7 +341,6 @@ function solve_kkt!(
         σ = inv(μ)
     end
 
-    # ===== Stage A =====
     copyto!(dir.primal, rhs.slack)
 
     if SCALE
@@ -357,7 +356,6 @@ function solve_kkt!(
     copyto!(dir.dual, rhs.dual)
     apply_constraint!(problem.A, problem.indices_primal, problem.b, dir.primal, dir.dual, one(T), σ, Val(true))
 
-    # ===== Stage B ξ build =====
     Γ₁ = view(cache.Γ, :, 1)
     Γ₂ = view(cache.Γ, :, 2)
 
@@ -375,22 +373,17 @@ function solve_kkt!(
 
     solve2x2!(cache.Σ, cache.γ)
 
-    # ===== Stage B post-solve injection (c₀ only) =====
     axpy!(cache.γ[2], Γ₂, dir.dual)
 
     copyto!(dir.slack, rhs.slack)
     ldiv_bwd!(cache.chol, dir.dual)
 
-    # ===== SMW correction =====
     axpy!(dir.primal.τ + σ * cache.γ[2], Γ₁, dir.dual)
-
-    # ===== Stage C =====
     apply_constraint!(problem.A, problem.indices_slack, problem.b, dir.slack, dir.dual, -one(T), one(T), Val(false))
 
     dir.slack.τ -= cache.γ[1]
     axpy_subset!(cache.γ[2], problem.C, dir.slack.X)
 
-    # ===== Stage D =====
     copyto!(dir.primal, dir.slack)
 
     if SCALE
