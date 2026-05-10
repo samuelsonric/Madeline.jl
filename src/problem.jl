@@ -174,7 +174,8 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
     end
 
     cons_to_cc = FBipartiteGraph{I, I}(ncc, m, p)
-    cc_to_pntr = FBipartiteGraph{I, I}(nnz(A), ncc, p)
+    cc_to_strt = FBipartiteGraph{I, I}(nnz(A), ncc, p)
+    cc_to_stop = FBipartiteGraph{I, I}(nnz(A), ncc, p)
 
     p = zero(I)
 
@@ -209,27 +210,36 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
     p = zero(I)
 
     for cc in vertices(cc_to_cons)
-        pointers(cc_to_pntr)[cc] = p + one(I)
+        pointers(cc_to_strt)[cc] = p + one(I)
+        pointers(cc_to_stop)[cc] = p + one(I)
 
         for c in neighbors(cc_to_cons, cc)
-            p += one(I); targets(cc_to_pntr)[p] = mark[c]
+            p += one(I)
 
-            for q in mark[c]:A.colptr[c + one(I)] - one(I)
+            qstrt = q = mark[c]
+            qstop = A.colptr[c + one(I)]
+
+            while q < qstop
                 i, j = cart(n, rowvals(A)[q])
                 r = frnt_to_cc[S.idx[j]]
 
                 if r != cc
-                    mark[c] = q
-                    break
+                    mark[c] = qstop = q
                 end
-            end
-        end
-    end 
 
-    pointers(cc_to_pntr)[ncc + one(I)] = p + one(I)
+                q += one(I)
+            end
+
+            targets(cc_to_strt)[p] = qstrt
+            targets(cc_to_stop)[p] = qstop - one(I)
+        end
+    end
+
+    pointers(cc_to_strt)[ncc + one(I)] = p + one(I)
+    pointers(cc_to_stop)[ncc + one(I)] = p + one(I)
 
     cons_to_cons = trilinegraph(cons_to_cc, cc_to_cons)
-    return cons_to_cons, cc_to_cons, cc_to_pntr, frnt_to_cc, frtptr, ncc
+    return cons_to_cons, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc
 end
 
 struct Problem{T, I}
@@ -245,7 +255,8 @@ struct Problem{T, I}
     indices_slack::FVector{I}
     cgraph::FBipartiteGraph{I, I}
     cc_to_cons::FBipartiteGraph{I, I}
-    cc_to_pntr::FBipartiteGraph{I, I}
+    cc_to_strt::FBipartiteGraph{I, I}
+    cc_to_stop::FBipartiteGraph{I, I}
     frnt_to_cc::FVector{I}
     frtptr::FVector{I}
     ncc::I
@@ -276,10 +287,10 @@ function Problem(
 
     indices_primal = compute_indices_primal(S, Ap)
     indices_slack = compute_indices_slack(Gp, Ap)
-    cgraph, cc_to_cons, cc_to_pntr, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
+    cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
     idxfwd, idxbwd, idxptr, nrhs = touched(Ap, k, S, frnt_to_cc, ncc)
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, cc_to_cons, cc_to_pntr, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs)
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs)
 end
 
 function Problem(

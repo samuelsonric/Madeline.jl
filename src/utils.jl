@@ -114,6 +114,32 @@ function dotpacked(w::Primal, A::SparseMatrixCSC, indices::AbstractVector, b::Ab
     return dotpacked(w.X, A, indices, c) - w.τ * b[c]
 end
 
+function dotpacked(
+        X::ChordalTriangular{:N, :L, T, I},
+        A::SparseMatrixCSC{T, I},
+        indices::AbstractVector{I},
+        pstrt::I,
+        pstop::I,
+    ) where {T, I}
+    n = convert(I, isqrt(size(A, 1)))
+    out = zero(T)
+
+    @inbounds for p in pstrt:pstop
+        i, j = cart(n, rowvals(A)[p])
+
+        Aij = nonzeros(A)[p]
+        Xij = getflatindex(X, indices[p])
+
+        out += Δ = Aij * Xij
+
+        if i != j
+            out += conj(Δ)
+        end
+    end
+
+    return real(out)
+end
+
 # compute the sum-product
 #
 #     Y ← Y + α Ac
@@ -323,6 +349,17 @@ function hessian!(
     fisher_impl!(space.Mptr, space.Mval, space.Fval, L, U, S, primal)
 end
 
+function hessian!(
+        space::Workspace{T, J},
+        S::ChordalTriangular{:N, :L, T, J},
+        L::ChordalTriangular{:N, :L, T, J},
+        U::ChordalTriangular{:N, :L, T, J},
+        primal::Val{PRIMAL},
+        range::UnitRange{J},
+    ) where {T, J, PRIMAL}
+    fisher_impl!(space.Mptr, space.Mval, space.Fval, L, U, S, primal, range)
+end
+
 function hessianroot!(
         space::Workspace{T, J},
         S::ChordalTriangular{:N, :L, T, J},
@@ -400,6 +437,25 @@ function hessian!(
     end
 
     hessian!(space, d.X, L, x.X, primal)
+    d.τ *= σ
+    return d
+end
+
+function hessian!(
+        space::Workspace{T, J},
+        L::ChordalTriangular{:N, :L, T, J},
+        x::Primal{:L, T, J},
+        d::Primal{:L, T, J},
+        primal::Val{PRIMAL},
+        range::UnitRange{J},
+    ) where {T, J, PRIMAL}
+    if PRIMAL
+        σ = inv(x.τ)^2
+    else
+        σ = x.τ^2
+    end
+
+    hessian!(space, d.X, L, x.X, primal, range)
     d.τ *= σ
     return d
 end

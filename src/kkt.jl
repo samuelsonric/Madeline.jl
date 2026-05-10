@@ -87,28 +87,21 @@ function schur_entry_cc!(
         V::FMatrix{T},
         A::SparseMatrixCSC{T, I},
         idxbwd::FVector{I},
-        frnt_to_cc::FVector{I},
-        idx::FVector{I},
         n::I,
-        cc::I,
         ci::I,
         cj::I,
         pistrt::I,
+        pistop::I,
         pjstrt::I,
+        pjstop::I,
     ) where {T, I}
-    colptr = A.colptr
     rowval = rowvals(A)
     nzval = nonzeros(A)
-
-    pistop = colptr[ci + one(I)] - one(I)
-    pjstop = colptr[cj + one(I)] - one(I)
 
     Hij = zero(T)
 
     @inbounds for pj in pjstrt:pjstop
         xj, yj = cart(n, rowval[pj])
-
-        frnt_to_cc[idx[yj]] != cc && break
 
         αj = nzval[pj]
 
@@ -123,8 +116,6 @@ function schur_entry_cc!(
 
         for pi in pistrt:pistop
             xi, yi = cart(n, rowval[pi])
-
-            frnt_to_cc[idx[yi]] != cc && break
 
             αi = nzval[pi]
 
@@ -154,10 +145,9 @@ function build_schur_sparse_impl!(
     A = problem.A
     k = problem.k
     idxbwd = problem.idxbwd
-    frnt_to_cc = problem.frnt_to_cc
-    idx = problem.S.idx
     cc_to_cons = problem.cc_to_cons
-    cc_to_pntr = problem.cc_to_pntr
+    cc_to_strt = problem.cc_to_strt
+    cc_to_stop = problem.cc_to_stop
 
     n = convert(I, isqrt(size(A, 1)))
 
@@ -169,17 +159,19 @@ function build_schur_sparse_impl!(
             cj = targets(cc_to_cons)[kj]
             cj <= k && continue
 
-            pjstrt = targets(cc_to_pntr)[kj]
+            pjstrt = targets(cc_to_strt)[kj]
+            pjstop = targets(cc_to_stop)[kj]
 
-            schur_entry_cc!(H, V, A, idxbwd, frnt_to_cc, idx, n, cc, cj, cj, pjstrt, pjstrt)
+            schur_entry_cc!(H, V, A, idxbwd, n, cj, cj, pjstrt, pjstop, pjstrt, pjstop)
 
             for ki in kj + one(I):hi
                 ci = targets(cc_to_cons)[ki]
                 ci <= k && continue
 
-                pistrt = targets(cc_to_pntr)[ki]
+                pistrt = targets(cc_to_strt)[ki]
+                pistop = targets(cc_to_stop)[ki]
 
-                schur_entry_cc!(H, V, A, idxbwd, frnt_to_cc, idx, n, cc, ci, cj, pistrt, pjstrt)
+                schur_entry_cc!(H, V, A, idxbwd, n, ci, cj, pistrt, pistop, pjstrt, pjstop)
             end
         end
     end
