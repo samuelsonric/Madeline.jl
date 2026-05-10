@@ -19,13 +19,15 @@ function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
     return chol
 end
 
-function setfactorindex!(chol::DenseCholeskyPivoted{T}, i::Integer, j::Integer, v::T) where {T}
-    chol.L[i, j] = v
+@propagate_inbounds function setfactorindex!(chol::DenseCholeskyPivoted{T}, v::T, i::Integer, j::Integer) where {T}
+    @boundscheck checkbounds(chol.L, i, j)
+    @inbounds chol.L[i, j] = v
     return chol
 end
 
-function addfactorindex!(chol::DenseCholeskyPivoted{T}, i::Integer, j::Integer, v::T) where {T}
-    chol.L[i, j] += v
+@propagate_inbounds function addfactorindex!(chol::DenseCholeskyPivoted{T}, v::T, i::Integer, j::Integer) where {T}
+    @boundscheck checkbounds(chol.L, i, j)
+    @inbounds chol.L[i, j] += v
     return chol
 end
 

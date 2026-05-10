@@ -14,13 +14,15 @@ function factorize!(chol::DenseCholesky{T}) where {T}
     return chol
 end
 
-function setfactorindex!(chol::DenseCholesky{T}, i::Integer, j::Integer, v::T) where {T}
-    chol.L[i, j] = v
+@propagate_inbounds function setfactorindex!(chol::DenseCholesky{T}, v::T, i::Integer, j::Integer) where {T}
+    @boundscheck checkbounds(chol.L, i, j)
+    @inbounds chol.L[i, j] = v
     return chol
 end
 
-function addfactorindex!(chol::DenseCholesky{T}, i::Integer, j::Integer, v::T) where {T}
-    chol.L[i, j] += v
+@propagate_inbounds function addfactorindex!(chol::DenseCholesky{T}, v::T, i::Integer, j::Integer) where {T}
+    @boundscheck checkbounds(chol.L, i, j)
+    @inbounds chol.L[i, j] += v
     return chol
 end
 

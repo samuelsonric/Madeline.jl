@@ -46,11 +46,11 @@
 # and solve it using Skajaa and Ye's nonsymmetric interior
 # point algorithm.
 
-struct Solver{UPLO, T, J}
+struct Solver{UPLO, T, J, Chol <: AbstractCholesky{T}}
     curr::State{T}
     prev::State{T}
     space::Workspace{T, J}
-    cache::KKT{T, J}
+    cache::KKT{T, Chol}
     itr::PrimalDualSlack{UPLO, T, J}
     pd1::PrimalDualSlack{UPLO, T, J}
     pd2::PrimalDualSlack{UPLO, T, J}
@@ -226,7 +226,7 @@ end
 
 function initialize!(
         itr::PrimalDualSlack{UPLO, T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         problem::Problem{T, J},
     ) where {UPLO, T, J}
     build_gram!(cache, problem.A)
@@ -421,7 +421,7 @@ end
 
 function combined_phase!(
         space::Workspace{T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         itr::PrimalDualSlack{UPLO, T, J},
         pd1::PrimalDualSlack{UPLO, T, J},
         pd2::PrimalDualSlack{UPLO, T, J},
@@ -522,7 +522,7 @@ function solve_loop!(
         state::State{T},
         prev::State{T},
         space::Workspace{T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         itr::PrimalDualSlack{UPLO, T, J},
         pd1::PrimalDualSlack{UPLO, T, J},
         pd2::PrimalDualSlack{UPLO, T, J},

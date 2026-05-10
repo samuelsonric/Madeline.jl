@@ -8,6 +8,7 @@ using LinearAlgebra: dot, norm, tr, axpy!, axpby!, ldiv!, lmul!, rmul!, Hermitia
 using LinearAlgebra.BLAS: BlasInt
 using SparseArrays: SparseMatrixCSC, rowvals, nonzeros, nzrange, nnz, sparse
 using Printf
+using Base: @propagate_inbounds
 using CommonSolve: CommonSolve, init, solve, solve!, step!
 
 using CliqueTrees: FBipartiteGraph, pointers, targets, neighbors, nv, etype, vertices, nov

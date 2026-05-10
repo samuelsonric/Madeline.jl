@@ -10,7 +10,7 @@
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
 #   - ρ: ⟨u₀, c₀⟩
-mutable struct KKT{T, I, Chol <: AbstractCholesky{T}}
+mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     const chol::Chol
     const U::FMatrix{T}                 # workspace for sparse constraints (n × nrhs)
     const V::FMatrix{T}                 # W^T W for sparse constraints (nrhs × nrhs)
@@ -20,7 +20,7 @@ mutable struct KKT{T, I, Chol <: AbstractCholesky{T}}
     ρ::T                                # ⟨u₀, c₀⟩
 end
 
-function KKT{T}(problem::Problem{T, I}) where {T, I}
+function KKT{T}(problem::Problem{T}) where {T}
     n = ncl(problem.S)
     m = size(problem.A, 2)
     nrhs = problem.nrhs
@@ -146,7 +146,7 @@ function schur_entry_cc!(
 end
 
 function build_schur_sparse_impl!(
-        cache::KKT{T, I},
+        cache::KKT{T},
         problem::Problem{T, I},
     ) where {T, I}
     H = cache.chol.L
@@ -189,7 +189,7 @@ end
 
 function process_cc!(
         space::Workspace{T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         L::ChordalTriangular{:N, UPLO, T, J},
         lo::J,
         hi::J,
@@ -207,7 +207,7 @@ end
 
 function build_schur_sparse!(
         space::Workspace{T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
     ) where {UPLO, T, J}
@@ -233,7 +233,7 @@ end
 
 function build_schur!(
         space::Workspace{T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         x::Primal{UPLO, T, J},
         w::Primal{UPLO, T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
@@ -249,10 +249,10 @@ function build_schur!(
         copytopacked!(w, problem.A, problem.indices_primal, problem.b, j)
         hessian!(space, L, x, w, Val(false))
 
-        addfactorindex!(chol, j, j, dotpacked(w, problem.A, problem.indices_primal, problem.b, j))
+        addfactorindex!(chol, dotpacked(w, problem.A, problem.indices_primal, problem.b, j), j, j)
 
         for i in neighbors(cgraph, j)
-            addfactorindex!(chol, i, j, dotpacked(w, problem.A, problem.indices_primal, problem.b, i))
+            addfactorindex!(chol, dotpacked(w, problem.A, problem.indices_primal, problem.b, i), i, j)
         end
     end
 
@@ -268,7 +268,7 @@ end
 
 function build_kkt!(
         space::Workspace{T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         x::Primal{UPLO, T, J},
         w::Primal{UPLO, T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
@@ -322,7 +322,7 @@ end
 #
 function solve_kkt!(
         space::Workspace{T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         dir::PrimalDualSlack{UPLO, T, J},
         rhs::PrimalDualSlack{UPLO, T, J},
         x::Primal{UPLO, T, J},
@@ -429,7 +429,7 @@ end
 
 function refine_kkt!(
         space::Workspace{T, J},
-        cache::KKT{T, J},
+        cache::KKT{T},
         wrk::PrimalDualSlack{UPLO, T, J},
         res::PrimalDualSlack{UPLO, T, J},
         dir::PrimalDualSlack{UPLO, T, J},
