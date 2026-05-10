@@ -238,13 +238,13 @@ function build_schur!(
     setfactorzero!(chol)
 
     @timeit TIMER "dense_schur" for j in oneto(problem.k)
-        copytopacked!(w, problem.A, problem.indices_primal, problem.b, j)
+        copytopacked!(w.X, problem.A, problem.indices_primal, j)
         hessian!(space, L, x, w, Val(false))
 
-        addfactorindex!(chol, dotpacked(w, problem.A, problem.indices_primal, problem.b, j), j, j)
+        addfactorindex!(chol, dotpacked(w.X, problem.A, problem.indices_primal, j), j, j)
 
         for i in neighbors(cgraph, j)
-            addfactorindex!(chol, dotpacked(w, problem.A, problem.indices_primal, problem.b, i), i, j)
+            addfactorindex!(chol, dotpacked(w.X, problem.A, problem.indices_primal, i), i, j)
         end
     end
 
