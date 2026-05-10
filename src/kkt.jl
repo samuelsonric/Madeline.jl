@@ -82,25 +82,20 @@ function build_gram!(cache::KKT, A::SparseMatrixCSC{T, I}) where {T, I}
     return
 end
 
-function schur_entry_cc!(
-        H::FMatrix{T},
+function schur_entry_sparse(
         V::FMatrix{T},
         A::SparseMatrixCSC{T, I},
         idxbwd::FVector{I},
-        n::I,
-        ci::I,
-        cj::I,
-        pistrt::I,
-        pistop::I,
-        pjstrt::I,
-        pjstop::I,
+        irange::AbstractRange{I},
+        jrange::AbstractRange{I},
     ) where {T, I}
+    n = convert(I, isqrt(size(A, 1)))
     rowval = rowvals(A)
     nzval = nonzeros(A)
 
     Hij = zero(T)
 
-    @inbounds for pj in pjstrt:pjstop
+    @inbounds for pj in jrange
         xj, yj = cart(n, rowval[pj])
 
         αj = nzval[pj]
@@ -114,7 +109,7 @@ function schur_entry_cc!(
 
         Δij = zero(T)
 
-        for pi in pistrt:pistop
+        for pi in irange
             xi, yi = cart(n, rowval[pi])
 
             αi = nzval[pi]
@@ -132,7 +127,72 @@ function schur_entry_cc!(
         Hij += Δij * αj
     end
 
-    H[ci, cj] += Hij
+    return Hij
+end
+
+function schur_column_dense!(
+        space::Workspace{T, J},
+        cache::KKT{T},
+        x::Primal{UPLO, T, J},
+        w::Primal{UPLO, T, J},
+        L::ChordalTriangular{:N, UPLO, T, J},
+        problem::Problem{T, J},
+        cj::J,
+        kj::J,
+        khi::J,
+        frange::AbstractRange{J},
+    ) where {UPLO, T, J}
+    A = problem.A
+    indices = problem.indices_primal
+    cc_to_cons = problem.cc_to_cons
+    cc_to_strt = problem.cc_to_strt
+    cc_to_stop = problem.cc_to_stop
+    chol = cache.chol
+
+    pjstrt = targets(cc_to_strt)[kj]
+    pjstop = targets(cc_to_stop)[kj]
+
+    copytopacked!(w.X, A, indices, pjstrt:pjstop)
+    hessian!(space, L, x, w, Val(false), frange)
+    addfactorindex!(chol, dotpacked(w.X, A, indices, pjstrt:pjstop), cj, cj)
+
+    for ki in kj + one(J):khi
+        ci = targets(cc_to_cons)[ki]
+        pistrt = targets(cc_to_strt)[ki]
+        pistop = targets(cc_to_stop)[ki]
+        addfactorindex!(chol, dotpacked(w.X, A, indices, pistrt:pistop), ci, cj)
+    end
+
+    return
+end
+
+function schur_column_sparse!(
+        cache::KKT{T},
+        problem::Problem{T, J},
+        cj::J,
+        kj::J,
+        khi::J,
+    ) where {T, J}
+    V = cache.V
+    A = problem.A
+    idxbwd = problem.idxbwd
+    cc_to_cons = problem.cc_to_cons
+    cc_to_strt = problem.cc_to_strt
+    cc_to_stop = problem.cc_to_stop
+    chol = cache.chol
+
+    pjstrt = targets(cc_to_strt)[kj]
+    pjstop = targets(cc_to_stop)[kj]
+
+    addfactorindex!(chol, schur_entry_sparse(V, A, idxbwd, pjstrt:pjstop, pjstrt:pjstop), cj, cj)
+
+    for ki in kj + one(J):khi
+        ci = targets(cc_to_cons)[ki]
+        pistrt = targets(cc_to_strt)[ki]
+        pistop = targets(cc_to_stop)[ki]
+        addfactorindex!(chol, schur_entry_sparse(V, A, idxbwd, pistrt:pistop, pjstrt:pjstop), ci, cj)
+    end
+
     return
 end
 
@@ -140,16 +200,18 @@ function process_cc!(
         space::Workspace{T, J},
         cache::KKT{T},
         L::ChordalTriangular{:N, UPLO, T, J},
-        fdsc::J,
-        root::J,
-        range::AbstractRange{J},
+        frange::AbstractRange{J},
+        srange::AbstractRange{J},
     ) where {UPLO, T, J}
-    U = view(cache.U, :,     range)
-    V = view(cache.V, range, range)
+    if !isempty(srange)
+        U = view(cache.U, :,     srange)
+        V = view(cache.V, srange, srange)
 
-    div_impl!(U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), fdsc:root)
-    syrk!(Val(:L), Val(:T), one(T), U, zero(T), V)
-    symmtri!(V, Val(:L))
+        div_impl!(U, space.Mptr, space.Mval, space.Fval, L, Val(:N), Val(:N), Val(UPLO), frange)
+        syrk!(Val(:L), Val(:T), one(T), U, zero(T), V)
+        symmtri!(V, Val(:L))
+    end
+
     return
 end
 
@@ -163,16 +225,7 @@ function build_schur!(
     ) where {UPLO, T, J}
     k = problem.k
     chol = cache.chol
-    H = chol.L
-    V = cache.V
-    A = problem.A
-    indices = problem.indices_primal
-    idxbwd = problem.idxbwd
     cc_to_cons = problem.cc_to_cons
-    cc_to_strt = problem.cc_to_strt
-    cc_to_stop = problem.cc_to_stop
-
-    n = convert(J, isqrt(size(A, 1)))
 
     setfactorzero!(chol)
 
@@ -186,48 +239,21 @@ function build_schur!(
         fdsc = problem.frtptr[cc]
         root = problem.frtptr[cc + one(J)] - one(J)
 
-        lo = pointers(cc_to_cons)[cc]
-        hi = pointers(cc_to_cons)[cc + one(J)] - one(J)
+        klo = pointers(cc_to_cons)[cc]
+        khi = pointers(cc_to_cons)[cc + one(J)] - one(J)
 
-        # --- Build V matrix for this CC ---
         slo = problem.idxptr[cc]
         shi = problem.idxptr[cc + one(J)] - one(J)
 
-        if slo <= shi
-            process_cc!(space, cache, L, fdsc, root, slo:shi)
-        end
+        process_cc!(space, cache, L, fdsc:root, slo:shi)
 
-        for kj in lo:hi
+        for kj in klo:khi
             cj = targets(cc_to_cons)[kj]
-            pjstrt = targets(cc_to_strt)[kj]
-            pjstop = targets(cc_to_stop)[kj]
 
             if cj <= k
-                # --- Dense: copytopacked / hessian / dotpacked ---
-                copytopacked!(w.X, A, indices, pjstrt:pjstop)
-                hessian!(space, L, x, w, Val(false), fdsc:root)
-
-                addfactorindex!(chol, dotpacked(w.X, A, indices, pjstrt:pjstop), cj, cj)
-
-                for ki in kj + one(J):hi
-                    ci = targets(cc_to_cons)[ki]
-                    pistrt = targets(cc_to_strt)[ki]
-                    pistop = targets(cc_to_stop)[ki]
-                    addfactorindex!(chol, dotpacked(w.X, A, indices, pistrt:pistop), ci, cj)
-                end
+                schur_column_dense!(space, cache, x, w, L, problem, cj, kj, khi, fdsc:root)
             else
-                # --- Sparse: schur_entry_cc! ---
-                schur_entry_cc!(H, V, A, idxbwd, n, cj, cj, pjstrt, pjstop, pjstrt, pjstop)
-
-                for ki in kj + one(J):hi
-                    ci = targets(cc_to_cons)[ki]
-                    ci <= k && continue
-
-                    pistrt = targets(cc_to_strt)[ki]
-                    pistop = targets(cc_to_stop)[ki]
-
-                    schur_entry_cc!(H, V, A, idxbwd, n, ci, cj, pistrt, pistop, pjstrt, pjstop)
-                end
+                schur_column_sparse!(cache, problem, cj, kj, khi)
             end
         end
     end
