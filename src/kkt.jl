@@ -133,8 +133,8 @@ end
 function schur_column_dense!(
         space::Workspace{T, J},
         cache::KKT{T},
-        x::Primal{UPLO, T, J},
-        w::Primal{UPLO, T, J},
+        X::ChordalTriangular{:N, UPLO, T, J},
+        W::ChordalTriangular{:N, UPLO, T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
         cj::J,
@@ -152,15 +152,15 @@ function schur_column_dense!(
     pjstrt = targets(cc_to_strt)[kj]
     pjstop = targets(cc_to_stop)[kj]
 
-    copytopacked!(w.X, A, indices, pjstrt:pjstop)
-    hessian!(space, L, x, w, Val(false), frange)
-    addfactorindex!(chol, dotpacked(w.X, A, indices, pjstrt:pjstop), cj, cj)
+    copytopacked!(W, A, indices, pjstrt:pjstop)
+    hessian!(space, W, L, X, Val(false), frange)
+    addfactorindex!(chol, dotpacked(W, A, indices, pjstrt:pjstop), cj, cj)
 
     for ki in kj + one(J):khi
         ci = targets(cc_to_cons)[ki]
         pistrt = targets(cc_to_strt)[ki]
         pistop = targets(cc_to_stop)[ki]
-        addfactorindex!(chol, dotpacked(w.X, A, indices, pistrt:pistop), ci, cj)
+        addfactorindex!(chol, dotpacked(W, A, indices, pistrt:pistop), ci, cj)
     end
 
     return
@@ -251,7 +251,7 @@ function build_schur!(
             cj = targets(cc_to_cons)[kj]
 
             if cj <= k
-                schur_column_dense!(space, cache, x, w, L, problem, cj, kj, khi, fdsc:root)
+                schur_column_dense!(space, cache, x.X, w.X, L, problem, cj, kj, khi, fdsc:root)
             else
                 schur_column_sparse!(cache, problem, cj, kj, khi)
             end
