@@ -23,10 +23,23 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     ρ::T                             # ⟨u₀, c₀⟩
 end
 
+const SPARSITY_THRESHOLD_SCHUR = 0.1
+
+function makecholesky(problem::Problem{T, I}) where {T, I}
+    graph = trilinegraph(problem.cons_to_cc, problem.cc_to_cons)
+    n = nv(graph)
+    m = ne(graph)
+
+    if 2m + n < SPARSITY_THRESHOLD_SCHUR * n * n
+        return SparseCholesky{T, I}(sparse(graph), problem.k)
+    else
+        return DenseCholeskyPivoted{T}(n)
+    end
+end
+
 function KKT{T}(problem::Problem{T}) where {T}
     m = size(problem.A, 2)
-
-    chol = DenseCholeskyPivoted{T}(m)
+    chol = makecholesky(problem)
     U = FMatrix{T}(undef, problem.max_cc_rows, problem.max_rhs_per_cc)
     V = FMatrix{T}(undef, problem.max_rhs_per_cc, problem.max_rhs_per_cc)
     W = FMatrix{T}(undef, problem.max_cons_per_cc, problem.max_cons_per_cc)

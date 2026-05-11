@@ -238,8 +238,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
     pointers(cc_to_strt)[ncc + one(I)] = p + one(I)
     pointers(cc_to_stop)[ncc + one(I)] = p + one(I)
 
-    cons_to_cons = trilinegraph(cons_to_cc, cc_to_cons)
-    return cons_to_cons, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc
+    return cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc
 end
 
 struct Problem{T, I}
@@ -253,7 +252,7 @@ struct Problem{T, I}
     S::ChordalSymbolic{I}
     indices_primal::FVector{I}
     indices_slack::FVector{I}
-    cgraph::FBipartiteGraph{I, I}
+    cons_to_cc::FBipartiteGraph{I, I}
     cc_to_cons::FBipartiteGraph{I, I}
     cc_to_strt::FBipartiteGraph{I, I}
     cc_to_stop::FBipartiteGraph{I, I}
@@ -291,7 +290,7 @@ function Problem(
 
     indices_primal = compute_indices_primal(S, Ap)
     indices_slack = compute_indices_slack(Gp, Ap)
-    cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
+    cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
     idxfwd, idxbwd, idxptr, nrhs = touched(Ap, k, S, frnt_to_cc, ncc)
 
     # Compute workspace sizes for OffsetArray optimization
@@ -319,7 +318,7 @@ function Problem(
         max_cons_per_cc = max(max_cons_per_cc, cons_count)
     end
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cgraph, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc)
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc)
 end
 
 function Problem(
@@ -345,7 +344,7 @@ function Base.copy(problem::Problem)
         problem.S,
         problem.indices_primal,
         problem.indices_slack,
-        problem.cgraph,
+        problem.cons_to_cc,
         problem.cc_to_cons,
         problem.cc_to_strt,
         problem.cc_to_stop,
