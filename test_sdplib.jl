@@ -39,6 +39,6 @@ for name in ["truss6", "truss7", "arch0"]
     problem = sdplib_to_chordal(name)
     solver = init(Madeline.Solver, problem)
     result = solve!(solver)
-    println("Status: ", result.status)
+    println("Status: ", status(result))
     println("Primal obj: ", primal_objective(result))
 end

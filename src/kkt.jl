@@ -247,7 +247,9 @@ function build_schur!(
             end
         end
 
-        addclique!(chol, cache.W, neighbors(cc_to_cons, cc))
+        clique = neighbors(cc_to_cons, cc)
+        Wview = view(cache.W, oneto(length(clique)), oneto(length(clique)))
+        addclique!(chol, Wview, clique)
     end
 
     @timeit TIMER "chol_factor" factorize!(cache.chol)

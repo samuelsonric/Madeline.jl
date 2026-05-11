@@ -17,8 +17,8 @@ function SparseCholesky{T, I}(pattern::SparseMatrixCSC, k::Integer) where {T, I}
     prm = FVector{I}(undef, k)
     ivp = FVector{I}(undef, k)
     Mptr = FVector{I}(undef, F.L.S.nMptr)
-    Mval = FVector{T}(undef, F.L.S.nNval * 2)
-    Fval = FVector{T}(undef, F.L.S.nFval * 2)
+    Mval = FVector{T}(undef, max(F.L.S.nMval, F.L.S.nNval * 2))
+    Fval = FVector{T}(undef, max(F.L.S.nFval * F.L.S.nFval, F.L.S.nFval * 2))
     temp = FVector{T}(undef, n)
 
     return SparseCholesky(F, W, prm, ivp, Mptr, Mval, Fval, temp)
@@ -26,6 +26,11 @@ end
 
 function setzero!(chol::SparseCholesky{T}) where {T}
     fill!(chol.F, zero(T))
+    return chol
+end
+
+function factorize!(chol::SparseCholesky{T}) where {T}
+    chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
     return chol
 end
 
