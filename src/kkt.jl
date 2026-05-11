@@ -23,7 +23,7 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     ρ::T                             # ⟨u₀, c₀⟩
 end
 
-const SPARSITY_THRESHOLD_SCHUR = 1.0
+const SPARSITY_THRESHOLD_SCHUR = 0.25
 
 function makecholesky(problem::Problem{T, I}) where {T, I}
     graph = trilinegraph(problem.cons_to_cc, problem.cc_to_cons)
