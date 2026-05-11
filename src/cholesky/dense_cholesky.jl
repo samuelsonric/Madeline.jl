@@ -13,7 +13,15 @@ function DenseCholesky{T}(m::Integer, static_regularization::T, dynamic_regulari
 end
 
 function factorize!(chol::DenseCholesky{T}) where {T}
-    info = potrf!(Val(:L), chol.L)
+    delta = chol.dynamic_regularization_delta
+    epsilon = chol.dynamic_regularization_eps
+
+    if !ispositive(epsilon)
+        info = potrf!(Val(:L), chol.L)
+    else
+        info = potrf!(Val(:L), chol.L, DynamicRegularization(; delta, epsilon))
+    end
+
     return iszero(info)
 end
 

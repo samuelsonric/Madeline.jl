@@ -18,7 +18,15 @@ function DenseCholeskyPivoted{T}(m::Integer, static_regularization::T, dynamic_r
 end
 
 function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
-    _, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm, -one(T))
+    delta = chol.dynamic_regularization_delta
+    epsilon = chol.dynamic_regularization_eps
+
+    if !ispositive(epsilon)
+        _, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm)
+    else
+        _, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm, DynamicRegularization(; delta, epsilon))
+    end
+
     return true
 end
 
