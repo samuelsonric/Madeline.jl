@@ -13,7 +13,7 @@ data = PowerModels.parse_file(filepath)
 
 # Build SDP relaxation
 model = Model(Madeline.Optimizer)
-set_attribute(model, "iter_limit", 5)
+set_attribute(model, "iter_limit", 100)
 
 pm = PowerModels.instantiate_model(
     data,

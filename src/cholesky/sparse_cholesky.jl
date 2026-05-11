@@ -25,13 +25,12 @@ function SparseCholesky{T, I}(pattern::SparseMatrixCSC, k::Integer) where {T, I}
 end
 
 function setzero!(chol::SparseCholesky{T}) where {T}
-    fill!(chol.F, zero(T))
+    axpby!(REGULARIZATION_EPSILON, I, zero(T), chol.F.L)
     return chol
 end
 
 function factorize!(chol::SparseCholesky{T}) where {T}
     info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
-    iszero(info) || @warn "chol_impl! info=$info (sparse Cholesky failed)"
     return iszero(info)
 end
 
