@@ -51,52 +51,6 @@ end
 
 # ===== Schur complement =====
 
-function build_gram!(cache::KKT, A::SparseMatrixCSC{T, I}) where {T, I}
-    H = cache.chol.L
-    n = isqrt(size(A, 1))
-    m = size(A, 2)
-
-    @inbounds for j in oneto(m)
-        pjlo = A.colptr[j]
-        pjhi = A.colptr[j + 1] - one(I)
-
-        for i in j:m
-            pi   = A.colptr[i]
-            pihi = A.colptr[i + 1] - one(I)
-
-            pj = pjlo
-
-            Hij = zero(T)
-
-            while pi <= pihi && pj <= pjhi
-                ri = rowvals(A)[pi]
-                rj = rowvals(A)[pj]
-
-                if ri == rj
-                    xi, yi = cart(n, ri)
-                    Hij += Δ = nonzeros(A)[pi] * nonzeros(A)[pj]
-
-                    if xi != yi
-                        Hij += conj(Δ)
-                    end
-
-                    pi += 1
-                    pj += 1
-                elseif ri < rj
-                    pi += 1
-                else
-                    pj += 1
-                end
-            end
-
-            H[i, j] = Hij
-        end
-    end
-
-    factorize!(cache.chol)
-    return
-end
-
 function schur_entry_sparse(
         V::AbstractMatrix{T},
         A::SparseMatrixCSC{T, I},

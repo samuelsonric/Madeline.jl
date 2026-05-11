@@ -229,14 +229,7 @@ function initialize!(
         cache::KKT{T},
         problem::Problem{T, J},
     ) where {UPLO, T, J}
-    build_gram!(cache, problem.A)
-
-    copyto!(itr.primal.X, problem.C)
-    axpy!(-one(T), I, itr.primal.X)
-    apply_constraint!(problem.A, problem.indices_primal, itr.primal.X, itr.dual, one(T), zero(T), Val(true))
-
-    ldiv_fwd!(cache.chol, itr.dual)
-    ldiv_bwd!(cache.chol, itr.dual)
+    fill!(itr.dual, zero(T))
 
     itr.primal.τ = one(T)
     itr.slack.τ = one(T)
