@@ -81,9 +81,6 @@ function Solver(problem::Problem{T, J}, settings::Settings{T}=Settings{T}()) whe
     best = State{:L, T}(m, S, G)
     history = History{T}(10)
 
-    initialize!(curr.itr, cache, problem)
-    copyto!(best, curr)
-
     q = Primal{:L, T}(S)
     L = similar(curr.itr.primal.X)
 
@@ -573,18 +570,7 @@ function CommonSolve.solve(problem::Problem{T}; settings::Settings{T}=Settings{T
 end
 
 function CommonSolve.solve!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Settings{T}()) where {UPLO, T, J}
-    if settings.verbose
-        show_banner(stdout, 0)
-        println("problem:")
-        show_problem(stdout, solver.problem, 2)
-        println()
-        println()
-        println("settings:")
-        show_settings(stdout, settings, 2)
-        println()
-        println()
-        print_header()
-    end
+    start!(solver; settings)
 
     while solver.curr.status == CONTINUE
         step!(solver; settings)
@@ -627,6 +613,26 @@ function CommonSolve.step!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Set
 
     solver.curr.nitr += 1
     return solver.curr.status
+end
+
+function start!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Settings{T}()) where {UPLO, T, J}
+    if settings.verbose
+        show_banner(stdout, 0)
+        println("problem:")
+        show_problem(stdout, solver.problem, 2)
+        println()
+        println()
+        println("settings:")
+        show_settings(stdout, settings, 2)
+        println()
+        println()
+        print_header()
+    end
+
+    initialize!(solver.curr.itr, solver.cache, solver.problem)
+    copyto!(solver.best, solver.curr)
+
+    return solver
 end
 
 function stop!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Settings{T}()) where {UPLO, T, J}
