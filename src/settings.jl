@@ -1,4 +1,4 @@
-@kwdef struct Settings{T}
+@kwdef mutable struct Settings{T}
     rel_opt::T      = sqrt(eps(T))
     abs_opt::T      = eps(T)^T(0.75)
     feas::T         = sqrt(eps(T))
@@ -10,7 +10,7 @@
     iter_limit::Int = 1000
     prox_bound::T   = T(0.99)
     static_regularization::T = zero(T)
-    dynamic_regularization_eps::T = zero(T)
+    dynamic_regularization_eps::T = sqrt(eps(T))
     dynamic_regularization_delta::T = cbrt(eps(T))
     scaling::Bool   = true
     equilibration::Bool = true

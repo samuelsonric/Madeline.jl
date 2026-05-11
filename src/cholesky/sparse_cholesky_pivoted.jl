@@ -41,7 +41,15 @@ end
 
 function factorize!(chol::SparseCholeskyPivoted{T}) where {T}
     F = chol.F
-    chol_piv_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.piv, chol.mval, chol.fval, F.L, F.perm, F.invp)
+    delta = chol.dynamic_regularization_delta
+    epsilon = chol.dynamic_regularization_eps
+
+    if !ispositive(epsilon)
+        chol_piv_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.piv, chol.mval, chol.fval, F.L, F.perm, F.invp)
+    else
+        chol_piv_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.piv, chol.mval, chol.fval, F.L, F.perm, F.invp, DynamicRegularization(; delta, epsilon))
+    end
+
     return true
 end
 
@@ -66,7 +74,11 @@ function ldiv_fwd!(chol::SparseCholeskyPivoted{T}, b::AbstractVector{T}) where {
         b[i] = chol.temp[i]
     end
 
-    div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
+    if !ispositive(chol.dynamic_regularization_eps)
+        div_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
+    else
+        div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
+    end
 
     return b
 end
@@ -84,7 +96,11 @@ function ldiv_fwd!(chol::SparseCholeskyPivoted{T}, B::AbstractMatrix{T}) where {
         end
     end
 
-    div_piv_impl!(B, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
+    if !ispositive(chol.dynamic_regularization_eps)
+        div_impl!(B, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
+    else
+        div_piv_impl!(B, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
+    end
 
     return B
 end
@@ -92,7 +108,11 @@ end
 function ldiv_bwd!(chol::SparseCholeskyPivoted{T}, b::AbstractVector{T}) where {T}
     F = chol.F
 
-    div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:C), Val(:N), F.L.uplo)
+    if !ispositive(chol.dynamic_regularization_eps)
+        div_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:C), Val(:N), F.L.uplo)
+    else
+        div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:C), Val(:N), F.L.uplo)
+    end
 
     @inbounds for i in eachindex(b)
         chol.temp[F.perm[i]] = b[i]

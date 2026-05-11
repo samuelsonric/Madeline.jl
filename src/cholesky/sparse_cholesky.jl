@@ -33,9 +33,15 @@ function setzero!(chol::SparseCholesky{T}) where {T}
 end
 
 function factorize!(chol::SparseCholesky{T}) where {T}
-    delta = cbrt(eps(T))
-    epsilon = sqrt(eps(T))
-    info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L, DynamicRegularization(; delta, epsilon))
+    delta = chol.dynamic_regularization_delta
+    epsilon = chol.dynamic_regularization_eps
+
+    if !ispositive(epsilon)
+        info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
+    else
+        info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L, DynamicRegularization(; delta, epsilon))
+    end
+
     return iszero(info)
 end
 
