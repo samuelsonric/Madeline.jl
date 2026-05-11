@@ -1,6 +1,5 @@
 mutable struct State{UPLO, T, I}
     nitr::Int
-    nslw::Int
     pobj::T
     dobj::T
     pres::T
@@ -21,7 +20,7 @@ Multifrontal.ncl(s::State) = size(s.itr.primal.X, 1)
 function State{UPLO, T}(m::Integer, S::ChordalSymbolic{I}, G::SparseMatrixCSC) where {UPLO, T, I}
     itr = PrimalDualSlack{UPLO, T}(m, S, G)
     return State{UPLO, T, I}(
-        0, 0,
+        0,
         typemax(T), typemax(T), typemax(T),
         typemax(T), typemax(T), typemax(T),
         typemax(T),
@@ -55,7 +54,6 @@ end
 function Base.copyto!(dst::State, src::State)
     # Note: status is NOT copied
     dst.nitr = src.nitr
-    dst.nslw = src.nslw
     dst.pobj = src.pobj
     dst.dobj = src.dobj
     dst.pres = src.pres

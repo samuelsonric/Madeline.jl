@@ -168,21 +168,11 @@ function check_slow_progress!(solver::Solver{UPLO, T, J}, settings::Settings{T})
     best = solver.best
     history = solver.history
 
-    # Stall detection: small variation over history window
-    Δ = max_abs_diff(history)
-
-    if state.nitr > 0 && Δ < settings.slow
-        state.nslw += 1
-    else
-        state.nslw = 0
-    end
-
-    if state.nslw >= 3
+    if state.nitr > history.n && max_abs_diff(history) < settings.slow
         state.status = SLOW_PROGRESS
         return state
     end
 
-    # Divergence detection: current much worse than best
     if state.nitr > 0 && score(state) > 100 * score(best)
         state.status = SLOW_PROGRESS
     end
