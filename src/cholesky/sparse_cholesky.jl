@@ -46,7 +46,7 @@ function addclique!(chol::SparseCholesky{T, I}, A::AbstractMatrix{T}, clique::Ab
         ivp[i] = F.invp[clique[i]]
     end
 
-    sortperm!(prm, ivp)
+    sortperm!(prm, ivp; alg=QuickSort)
 
     @inbounds for i in oneto(n)
         ivp[prm[i]] = i
