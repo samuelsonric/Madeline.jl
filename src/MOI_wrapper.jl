@@ -124,10 +124,9 @@ MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 
 # RawOptimizerAttribute support for all settings
 const _SUPPORTED_ATTRS = (
-    "rel_opt", "abs_opt", "feas", "infeas", "tau_infeas",
-    "illposed", "slow", "near_factor", "iter_limit", "prox_bound",
-    "static_regularization", "dynamic_regularization_eps", "dynamic_regularization_delta",
-    "scaling", "equilibration", "pivot", "verbose",
+    "tol_rel_opt", "tol_abs_opt", "tol_feas", "tol_infeas", "tol_tau_infeas",
+    "tol_illposed", "tol_slow", "tol_dynamic", "near_factor", "iter_limit", "prox_bound",
+    "del_static", "del_dynamic", "scaling", "equilibration", "pivot", "verbose",
 )
 
 function MOI.supports(::Optimizer, attr::MOI.RawOptimizerAttribute)
@@ -136,32 +135,32 @@ end
 
 function MOI.set(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute, value)
     name = attr.name
-    if name == "rel_opt"
-        optimizer.settings.rel_opt = Float64(value)
-    elseif name == "abs_opt"
-        optimizer.settings.abs_opt = Float64(value)
-    elseif name == "feas"
-        optimizer.settings.feas = Float64(value)
-    elseif name == "infeas"
-        optimizer.settings.infeas = Float64(value)
-    elseif name == "tau_infeas"
-        optimizer.settings.tau_infeas = Float64(value)
-    elseif name == "illposed"
-        optimizer.settings.illposed = Float64(value)
-    elseif name == "slow"
-        optimizer.settings.slow = Float64(value)
+    if name == "tol_rel_opt"
+        optimizer.settings.tol_rel_opt = Float64(value)
+    elseif name == "tol_abs_opt"
+        optimizer.settings.tol_abs_opt = Float64(value)
+    elseif name == "tol_feas"
+        optimizer.settings.tol_feas = Float64(value)
+    elseif name == "tol_infeas"
+        optimizer.settings.tol_infeas = Float64(value)
+    elseif name == "tol_tau_infeas"
+        optimizer.settings.tol_tau_infeas = Float64(value)
+    elseif name == "tol_illposed"
+        optimizer.settings.tol_illposed = Float64(value)
+    elseif name == "tol_slow"
+        optimizer.settings.tol_slow = Float64(value)
     elseif name == "near_factor"
         optimizer.settings.near_factor = Float64(value)
     elseif name == "iter_limit"
         optimizer.settings.iter_limit = Int(value)
     elseif name == "prox_bound"
         optimizer.settings.prox_bound = Float64(value)
-    elseif name == "static_regularization"
-        optimizer.settings.static_regularization = Float64(value)
-    elseif name == "dynamic_regularization_eps"
-        optimizer.settings.dynamic_regularization_eps = Float64(value)
-    elseif name == "dynamic_regularization_delta"
-        optimizer.settings.dynamic_regularization_delta = Float64(value)
+    elseif name == "tol_dynamic"
+        optimizer.settings.tol_dynamic = Float64(value)
+    elseif name == "del_static"
+        optimizer.settings.del_static = Float64(value)
+    elseif name == "del_dynamic"
+        optimizer.settings.del_dynamic = Float64(value)
     elseif name == "scaling"
         optimizer.settings.scaling = Bool(value)
     elseif name == "equilibration"
@@ -178,32 +177,32 @@ end
 
 function MOI.get(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute)
     name = attr.name
-    if name == "rel_opt"
-        return optimizer.settings.rel_opt
-    elseif name == "abs_opt"
-        return optimizer.settings.abs_opt
-    elseif name == "feas"
-        return optimizer.settings.feas
-    elseif name == "infeas"
-        return optimizer.settings.infeas
-    elseif name == "tau_infeas"
-        return optimizer.settings.tau_infeas
-    elseif name == "illposed"
-        return optimizer.settings.illposed
-    elseif name == "slow"
-        return optimizer.settings.slow
+    if name == "tol_rel_opt"
+        return optimizer.settings.tol_rel_opt
+    elseif name == "tol_abs_opt"
+        return optimizer.settings.tol_abs_opt
+    elseif name == "tol_feas"
+        return optimizer.settings.tol_feas
+    elseif name == "tol_infeas"
+        return optimizer.settings.tol_infeas
+    elseif name == "tol_tau_infeas"
+        return optimizer.settings.tol_tau_infeas
+    elseif name == "tol_illposed"
+        return optimizer.settings.tol_illposed
+    elseif name == "tol_slow"
+        return optimizer.settings.tol_slow
     elseif name == "near_factor"
         return optimizer.settings.near_factor
     elseif name == "iter_limit"
         return optimizer.settings.iter_limit
     elseif name == "prox_bound"
         return optimizer.settings.prox_bound
-    elseif name == "static_regularization"
-        return optimizer.settings.static_regularization
-    elseif name == "dynamic_regularization_eps"
-        return optimizer.settings.dynamic_regularization_eps
-    elseif name == "dynamic_regularization_delta"
-        return optimizer.settings.dynamic_regularization_delta
+    elseif name == "tol_dynamic"
+        return optimizer.settings.tol_dynamic
+    elseif name == "del_static"
+        return optimizer.settings.del_static
+    elseif name == "del_dynamic"
+        return optimizer.settings.del_dynamic
     elseif name == "scaling"
         return optimizer.settings.scaling
     elseif name == "equilibration"

@@ -54,9 +54,9 @@ end
 function makecholesky(problem::Problem{T, I}, settings::Settings{T}) where {T, I}
     n = size(problem.A, 2)
     m = constraint_graph_nnz(problem)
-    sr = settings.static_regularization
-    de = settings.dynamic_regularization_eps
-    dd = settings.dynamic_regularization_delta
+    sr = settings.del_static
+    de = settings.tol_dynamic
+    dd = settings.del_dynamic
 
     if 2m + n < SPARSITY_THRESHOLD_SCHUR * n * n
         if settings.pivot

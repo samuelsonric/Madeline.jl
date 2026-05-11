@@ -167,7 +167,7 @@ function check_slow_progress!(solver::Solver{UPLO, T, J}, settings::Settings{T})
     state = solver.curr
     history = solver.history
 
-    if state.nitr > history.n && max_abs_diff(history) < settings.slow
+    if state.nitr > history.n && max_abs_diff(history) < settings.tol_slow
         state.status = SLOW_PROGRESS
         return state
     end
@@ -455,13 +455,13 @@ function check_termination(state::State{UPLO, T, I}, settings::Settings{T}) wher
     dres = state.dres / τ
     g = gap(state) / τ^2
 
-    if dres <= settings.feas && pres <= settings.feas && (g <= settings.abs_opt || relgap(state) <= settings.rel_opt)
+    if dres <= settings.tol_feas && pres <= settings.tol_feas && (g <= settings.tol_abs_opt || relgap(state) <= settings.tol_rel_opt)
         return OPTIMAL
-    elseif state.pinf <= settings.infeas && τ <= settings.tau_infeas
+    elseif state.pinf <= settings.tol_infeas && τ <= settings.tol_tau_infeas
         return PRIMAL_INFEASIBLE
-    elseif state.dinf <= settings.infeas && τ <= settings.tau_infeas
+    elseif state.dinf <= settings.tol_infeas && τ <= settings.tol_tau_infeas
         return DUAL_INFEASIBLE
-    elseif max(τ, kap(state)) <= settings.illposed
+    elseif max(τ, kap(state)) <= settings.tol_illposed
         return ILL_POSED
     elseif state.nitr == settings.iter_limit
         return ITERATION_LIMIT
@@ -478,13 +478,13 @@ function check_termination_near!(state::State{UPLO, T, I}, settings::Settings{T}
     g = gap(state) / τ^2
 
     if state.status in (SLOW_PROGRESS, ITERATION_LIMIT, NUMERICAL_FAILURE)
-        if dres <= f * settings.feas && pres <= f * settings.feas && (g <= f * settings.abs_opt || relgap(state) <= f * settings.rel_opt)
+        if dres <= f * settings.tol_feas && pres <= f * settings.tol_feas && (g <= f * settings.tol_abs_opt || relgap(state) <= f * settings.tol_rel_opt)
             state.status = NEAR_OPTIMAL
-        elseif state.pinf <= f * settings.infeas && τ <= f * settings.tau_infeas
+        elseif state.pinf <= f * settings.tol_infeas && τ <= f * settings.tol_tau_infeas
             state.status = NEAR_PRIMAL_INFEASIBLE
-        elseif state.dinf <= f * settings.infeas && τ <= f * settings.tau_infeas
+        elseif state.dinf <= f * settings.tol_infeas && τ <= f * settings.tol_tau_infeas
             state.status = NEAR_DUAL_INFEASIBLE
-        elseif max(τ, kap(state)) <= f * settings.illposed
+        elseif max(τ, kap(state)) <= f * settings.tol_illposed
             state.status = NEAR_ILL_POSED
         end
     end
