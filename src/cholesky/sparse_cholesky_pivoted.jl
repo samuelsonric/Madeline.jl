@@ -10,12 +10,12 @@ struct SparseCholeskyPivoted{T, I} <: AbstractCholesky{T}
     piv::FVector{BlasInt} # workspace for pivots
     mval::FVector{I}      # workspace for pivoting
     fval::FVector{I}      # workspace for pivoting
-    static_regularization::T
-    dynamic_regularization_eps::T
-    dynamic_regularization_delta::T
+    del_static::T
+    tol_dynamic::T
+    del_dynamic::T
 end
 
-function SparseCholeskyPivoted{T, I}(pattern::SparseMatrixCSC, k::Integer, static_regularization::T, dynamic_regularization_eps::T, dynamic_regularization_delta::T) where {T, I}
+function SparseCholeskyPivoted{T, I}(pattern::SparseMatrixCSC, k::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T, I}
     F = FChordalCholesky{:L, T, I}(pattern)
     n = size(F, 1)
     L = F.L
@@ -31,18 +31,18 @@ function SparseCholeskyPivoted{T, I}(pattern::SparseMatrixCSC, k::Integer, stati
     mval = FVector{I}(undef, L.S.nNval)
     fval = FVector{I}(undef, L.S.nFval)
 
-    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval, static_regularization, dynamic_regularization_eps, dynamic_regularization_delta)
+    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval, del_static, tol_dynamic, del_dynamic)
 end
 
 function setzero!(chol::SparseCholeskyPivoted{T}) where {T}
-    axpby!(chol.static_regularization, I, zero(T), chol.F.L)
+    axpby!(chol.del_static, I, zero(T), chol.F.L)
     return chol
 end
 
 function factorize!(chol::SparseCholeskyPivoted{T}) where {T}
     F = chol.F
-    delta = chol.dynamic_regularization_delta
-    epsilon = chol.dynamic_regularization_eps
+    delta = chol.del_dynamic
+    epsilon = chol.tol_dynamic
 
     if !ispositive(epsilon)
         chol_piv_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.piv, chol.mval, chol.fval, F.L, F.perm, F.invp)
@@ -74,7 +74,7 @@ function ldiv_fwd!(chol::SparseCholeskyPivoted{T}, b::AbstractVector{T}) where {
         b[i] = chol.temp[i]
     end
 
-    if !ispositive(chol.dynamic_regularization_eps)
+    if !ispositive(chol.tol_dynamic)
         div_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
     else
         div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
@@ -96,7 +96,7 @@ function ldiv_fwd!(chol::SparseCholeskyPivoted{T}, B::AbstractMatrix{T}) where {
         end
     end
 
-    if !ispositive(chol.dynamic_regularization_eps)
+    if !ispositive(chol.tol_dynamic)
         div_impl!(B, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
     else
         div_piv_impl!(B, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
@@ -108,7 +108,7 @@ end
 function ldiv_bwd!(chol::SparseCholeskyPivoted{T}, b::AbstractVector{T}) where {T}
     F = chol.F
 
-    if !ispositive(chol.dynamic_regularization_eps)
+    if !ispositive(chol.tol_dynamic)
         div_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:C), Val(:N), F.L.uplo)
     else
         div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:C), Val(:N), F.L.uplo)
