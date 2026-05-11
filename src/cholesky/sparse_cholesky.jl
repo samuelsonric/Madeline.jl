@@ -31,6 +31,7 @@ end
 
 function factorize!(chol::SparseCholesky{T}) where {T}
     info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
+    iszero(info) || @warn "chol_impl! info=$info (sparse Cholesky failed)"
     return iszero(info)
 end
 
@@ -66,54 +67,56 @@ end
 function add_clique_impl!(L::FChordalTriangular{:N, :L, T, I}, W::AbstractMatrix{T}, ind::AbstractVector{I}) where {T, I}
     n = convert(I, length(ind))
 
-    f = L.S.idx[ind[1]]
+    if ispositive(n)
+        f = L.S.idx[ind[1]]
 
-    D, res = diagblock(L, f)
-    B, sep = offdblock(L, f)
+        D, res = diagblock(L, f)
+        B, sep = offdblock(L, f)
 
-    rlo = first(res)
-    rhi = last(res)
+        rlo = first(res)
+        rhi = last(res)
 
-    if !isempty(sep)
-        slo = first(sep)
-        shi = last(sep)
-    end
-
-    for k in oneto(n)
-        v = ind[k]
-
-        if rhi < v
-            f = L.S.idx[v]
-
-            D, res = diagblock(L, f)
-            B, sep = offdblock(L, f)
-
-            rlo = first(res)
-            rhi = last(res)
-
-            if !isempty(sep)
-                slo = first(sep)
-                shi = last(sep)
-            end
+        if !isempty(sep)
+            slo = first(sep)
+            shi = last(sep)
         end
 
-        vloc = v - rlo + one(I)
-        sloc = one(I)
+        for k in oneto(n)
+            v = ind[k]
 
-        for j in k:n
-            w = ind[j]
+            if rhi < v
+                f = L.S.idx[v]
 
-            if w <= rhi
-                wloc = w - rlo + one(I)
-                D[wloc, vloc] += W[j, k]
-            elseif !isempty(sep) && w >= slo && w <= shi
-                while sep[sloc] < w
-                    sloc += one(I)
+                D, res = diagblock(L, f)
+                B, sep = offdblock(L, f)
+
+                rlo = first(res)
+                rhi = last(res)
+
+                if !isempty(sep)
+                    slo = first(sep)
+                    shi = last(sep)
                 end
+            end
 
-                B[sloc, vloc] += W[j, k]
-            else
-                break
+            vloc = v - rlo + one(I)
+            sloc = one(I)
+
+            for j in k:n
+                w = ind[j]
+
+                if w <= rhi
+                    wloc = w - rlo + one(I)
+                    D[wloc, vloc] += W[j, k]
+                elseif !isempty(sep) && w >= slo && w <= shi
+                    while sep[sloc] < w
+                        sloc += one(I)
+                    end
+
+                    B[sloc, vloc] += W[j, k]
+                else
+                    break
+                end
             end
         end
     end
