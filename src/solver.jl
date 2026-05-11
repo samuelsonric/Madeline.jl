@@ -441,27 +441,27 @@ function combined_phase!(
     copyto!(rhs.primal, z)
     lmul!(-one(T), rhs.primal)
 
-    solve_kkt!(space, cache, pd1, rhs, x, L, problem, μ, scaling)
-    refine_kkt!(space, cache, wrk, res, pd1, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
+    @timeit TIMER "solve_kkt" solve_kkt!(space, cache, pd1, rhs, x, L, problem, μ, scaling)
+    @timeit TIMER "refine_kkt" refine_kkt!(space, cache, wrk, res, pd1, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
 
     prediction_toa_rhs!(space, wrk, res, rhs, pd1, itr, q, L, μ, scaling)
-    solve_kkt!(space, cache, pd2, rhs, x, L, problem, μ, scaling)
-    refine_kkt!(space, cache, wrk, res, pd2, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
+    @timeit TIMER "solve_kkt" solve_kkt!(space, cache, pd2, rhs, x, L, problem, μ, scaling)
+    @timeit TIMER "refine_kkt" refine_kkt!(space, cache, wrk, res, pd2, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
 
     corrector_rhs!(rhs, itr, q, μ, scaling)
-    solve_kkt!(space, cache, cd1, rhs, x, L, problem, μ, scaling)
-    refine_kkt!(space, cache, wrk, res, cd1, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
+    @timeit TIMER "solve_kkt" solve_kkt!(space, cache, cd1, rhs, x, L, problem, μ, scaling)
+    @timeit TIMER "refine_kkt" refine_kkt!(space, cache, wrk, res, cd1, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
 
     flag = centering_toa_rhs!(space, wrk, res, rhs, cd1, itr, q, L, μ, scaling)
 
     if flag
-        solve_kkt!(space, cache, cd2, rhs, x, L, problem, μ, scaling)
-        refine_kkt!(space, cache, wrk, res, cd2, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
+        @timeit TIMER "solve_kkt" solve_kkt!(space, cache, cd2, rhs, x, L, problem, μ, scaling)
+        @timeit TIMER "refine_kkt" refine_kkt!(space, cache, wrk, res, cd2, itr, rhs, q, L, problem, μ, min_res_norm, scaling)
     else
         fill!(cd2, zero(T))
     end
 
-    status, α, prox = linesearch_combined!(
+    @timeit TIMER "linesearch" status, α, prox = linesearch_combined!(
         space, wrk, res, itr, pd1, pd2, cd1, cd2,
         q, L, prox_bound, scaling)
 
@@ -548,15 +548,15 @@ function solve_loop!(
             x = q
         end
 
-        flag = factorize!(space, L, p, scaling)
+        @timeit TIMER "cone_factor" flag = factorize!(space, L, p, scaling)
 
         if flag
-            gradient!(space, q, L, p, scaling)
-            flag = build_kkt!(space, cache, x, res.primal, L, problem, state.μ, scaling)
+            @timeit TIMER "gradient" gradient!(space, q, L, p, scaling)
+            @timeit TIMER "build_kkt" flag = build_kkt!(space, cache, x, res.primal, L, problem, state.μ, scaling)
         end
 
         if flag
-            state.status, step, state.prox = combined_phase!(
+            @timeit TIMER "combined" state.status, step, state.prox = combined_phase!(
                 space, cache,
                 itr, pd1, pd2, cd1, cd2, rhs, wrk, res,
                 x, q, L,

@@ -25,13 +25,38 @@ end
 
 const SPARSITY_THRESHOLD_SCHUR = 0.25
 
+function constraint_graph(problem::Problem)
+    return sparse(trilinegraph(problem.cons_to_cc, problem.cc_to_cons))
+end
+
+function constraint_graph_nnz(problem::Problem)
+    return trilinegraph_ne(problem.cons_to_cc, problem.cc_to_cons)
+end
+
+function trilinegraph_ne(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) where {I}
+    n = nv(ve)
+    m = zero(I)
+    marker = FVector{I}(undef, n)
+    fill!(marker, zero(I))
+
+    @inbounds for v in vertices(ve)
+        for w in neighbors(ve, v), x in neighbors(ev, w)
+            if x > v && marker[x] < v
+                marker[x] = v
+                m += one(I)
+            end
+        end
+    end
+
+    return m + n  # off-diagonal + diagonal
+end
+
 function makecholesky(problem::Problem{T, I}) where {T, I}
-    graph = trilinegraph(problem.cons_to_cc, problem.cc_to_cons)
-    n = nv(graph)
-    m = ne(graph)
+    n = size(problem.A, 2)
+    m = constraint_graph_nnz(problem)
 
     if 2m + n < SPARSITY_THRESHOLD_SCHUR * n * n
-        return SparseCholesky{T, I}(sparse(graph), problem.max_cons_per_cc)
+        return SparseCholesky{T, I}(constraint_graph(problem), problem.max_cons_per_cc)
     else
         return DenseCholeskyPivoted{T}(n)
     end
@@ -336,14 +361,14 @@ function solve_kkt!(
         axpy!(-one(T), rhs.primal, dir.primal)
     end
 
-    hessian!(space, L, x, dir.primal, Val(false))
+    @timeit TIMER "hessian" hessian!(space, L, x, dir.primal, Val(false))
 
     if !SCALE
         axpy!(-σ, rhs.primal, dir.primal)
     end
 
     copyto!(dir.dual, rhs.dual)
-    apply_constraint!(problem.A, problem.indices_primal, problem.b, dir.primal, dir.dual, one(T), σ, Val(true))
+    @timeit TIMER "apply_constraint" apply_constraint!(problem.A, problem.indices_primal, problem.b, dir.primal, dir.dual, one(T), σ, Val(true))
 
     Γ₁ = view(cache.Γ, :, 1)
     Γ₂ = view(cache.Γ, :, 2)
@@ -351,7 +376,7 @@ function solve_kkt!(
     cache.γ[1] =  dir.primal.τ
     cache.γ[2] = -symdot(problem.C, dir.primal.X)
 
-    ldiv_fwd!(cache.chol, dir.dual)
+    @timeit TIMER "ldiv_fwd" ldiv_fwd!(cache.chol, dir.dual)
 
     Δ = cache.Σ[1, 1] * dot(Γ₁, dir.dual)
 
@@ -363,10 +388,10 @@ function solve_kkt!(
     axpy!(cache.γ[2] * σ + dir.primal.τ, Γ₁, dir.dual)
     axpy!(cache.γ[2],                    Γ₂, dir.dual)
 
-    ldiv_bwd!(cache.chol, dir.dual)
+    @timeit TIMER "ldiv_bwd" ldiv_bwd!(cache.chol, dir.dual)
 
     copyto!(dir.slack, rhs.slack)
-    apply_constraint!(problem.A, problem.indices_slack, problem.b, dir.slack, dir.dual, -one(T), one(T), Val(false))
+    @timeit TIMER "apply_constraint" apply_constraint!(problem.A, problem.indices_slack, problem.b, dir.slack, dir.dual, -one(T), one(T), Val(false))
 
     dir.slack.τ -= cache.γ[1]
     axpy_subset!(cache.γ[2], problem.C, dir.slack.X)
@@ -377,7 +402,7 @@ function solve_kkt!(
         axpy!(-one(T), rhs.primal, dir.primal)
     end
 
-    hessian!(space, L, x, dir.primal, Val(false))
+    @timeit TIMER "hessian" hessian!(space, L, x, dir.primal, Val(false))
 
     if !SCALE
         axpy!(-σ, rhs.primal, dir.primal)

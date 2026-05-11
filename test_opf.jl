@@ -14,6 +14,7 @@ data = PowerModels.parse_file(filepath)
 # Build SDP relaxation
 model = Model(Madeline.Optimizer)
 set_attribute(model, "iter_limit", 100)
+# set_attribute(model, "scaling", false)  # dual scaling
 
 pm = PowerModels.instantiate_model(
     data,
@@ -23,7 +24,11 @@ pm = PowerModels.instantiate_model(
 )
 
 println("=== Solving $filepath ===")
+using TimerOutputs
+TimerOutputs.reset_timer!(Madeline.TIMER)
 @time optimize!(model)
 
 res = unsafe_backend(model).result
 println("Status: ", Madeline.status(res))
+println()
+show(Madeline.TIMER)
