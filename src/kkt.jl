@@ -252,8 +252,8 @@ function build_schur!(
         addclique!(chol, Wview, clique)
     end
 
-    @timeit TIMER "chol_factor" factorize!(cache.chol)
-    return
+    @timeit TIMER "chol_factor" success = factorize!(cache.chol)
+    return success
 end
 
 # ===== KKT system =====
@@ -274,7 +274,8 @@ function build_kkt!(
         σ = inv(μ)
     end
 
-    build_schur!(space, cache, x, w, L, problem)
+    success = build_schur!(space, cache, x, w, L, problem)
+    success || return false
 
     w.τ = one(T)
     copyto!(w.X, problem.C)
@@ -303,7 +304,7 @@ function build_kkt!(
     cache.Σ[2, 2] = symdot(w.X, problem.C) + α * Σ₂₁ * Σ₂₁ - Σ₂₂
 
     cache.ρ = Σ₂₁
-    return
+    return true
 end
 
 # solve the KKT system

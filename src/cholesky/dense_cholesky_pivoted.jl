@@ -15,8 +15,8 @@ function DenseCholeskyPivoted{T}(m::Integer) where {T}
 end
 
 function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
-    _, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm, -one(T))
-    return chol
+    info, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm, -one(T))
+    return iszero(info)
 end
 
 function setzero!(chol::DenseCholeskyPivoted{T}) where {T}

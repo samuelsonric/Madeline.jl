@@ -552,8 +552,10 @@ function solve_loop!(
 
         if flag
             gradient!(space, q, L, p, scaling)
-            build_kkt!(space, cache, x, res.primal, L, problem, state.μ, scaling)
+            flag = build_kkt!(space, cache, x, res.primal, L, problem, state.μ, scaling)
+        end
 
+        if flag
             state.status, step, state.prox = combined_phase!(
                 space, cache,
                 itr, pd1, pd2, cd1, cd2, rhs, wrk, res,

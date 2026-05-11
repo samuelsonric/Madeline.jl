@@ -10,8 +10,8 @@ function DenseCholesky{T}(m::Integer) where {T}
 end
 
 function factorize!(chol::DenseCholesky{T}) where {T}
-    potrf!(Val(:L), chol.L)
-    return chol
+    info = potrf!(Val(:L), chol.L)
+    return iszero(info)
 end
 
 function setzero!(chol::DenseCholesky{T}) where {T}

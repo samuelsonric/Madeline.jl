@@ -30,8 +30,8 @@ function setzero!(chol::SparseCholesky{T}) where {T}
 end
 
 function factorize!(chol::SparseCholesky{T}) where {T}
-    chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
-    return chol
+    info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
+    return iszero(info)
 end
 
 function addclique!(chol::SparseCholesky{T, I}, A::AbstractMatrix{T}, clique::AbstractVector{I}) where {T, I}
