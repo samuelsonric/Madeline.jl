@@ -25,22 +25,28 @@ function SparseCholesky{T, I}(pattern::SparseMatrixCSC, k::Integer) where {T, I}
 end
 
 function setzero!(chol::SparseCholesky{T}) where {T}
-    axpby!(REGULARIZATION_EPSILON, I, zero(T), chol.F.L)
+    fill!(chol.F.L, zero(T))
     return chol
 end
 
 function factorize!(chol::SparseCholesky{T}) where {T}
-    info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
+    delta = cbrt(eps(T))
+    epsilon = sqrt(eps(T))
+    info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L, DynamicRegularization(; delta, epsilon))
     return iszero(info)
 end
 
 function addclique!(chol::SparseCholesky{T, I}, A::AbstractMatrix{T}, clique::AbstractVector{I}) where {T, I}
-    F = chol.F
     n = length(clique)
-
     prm = view(chol.prm, oneto(n))
     ivp = view(chol.ivp, oneto(n))
     W = view(chol.W, oneto(n), oneto(n))
+    add_clique_impl!(chol.F, A, clique, W, prm, ivp)
+    return chol
+end
+
+function add_clique_impl!(F::FChordalCholesky{:L, T, I}, A::AbstractMatrix{T}, clique::AbstractVector{I}, W::AbstractMatrix{T}, prm::AbstractVector{I}, ivp::AbstractVector{I}) where {T, I}
+    n = length(clique)
 
     @inbounds for i in eachindex(clique)
         ivp[i] = F.invp[clique[i]]
@@ -60,7 +66,7 @@ function addclique!(chol::SparseCholesky{T, I}, A::AbstractMatrix{T}, clique::Ab
 
     add_clique_impl!(F.L, W, prm)
 
-    return chol
+    return
 end
 
 function add_clique_impl!(L::FChordalTriangular{:N, :L, T, I}, W::AbstractMatrix{T}, ind::AbstractVector{I}) where {T, I}

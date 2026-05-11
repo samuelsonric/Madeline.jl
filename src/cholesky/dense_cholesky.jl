@@ -15,7 +15,7 @@ function factorize!(chol::DenseCholesky{T}) where {T}
 end
 
 function setzero!(chol::DenseCholesky{T}) where {T}
-    axpby!(REGULARIZATION_EPSILON, I, zero(T), chol.L)
+    fill!(chol.L, zero(T))
     return chol
 end
 

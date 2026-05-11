@@ -17,7 +17,7 @@ using CliqueTrees.Multifrontal
 using CliqueTrees.Multifrontal: HermOrSym, HermOrSymTri, HermOrSymSparse, HermTri, ChordalTriangular, FChordalTriangular, Permutation
 using CliqueTrees.Multifrontal: FVector, FScalar, FMatrix, FPermutation, ChordalSymbolic
 using CliqueTrees.Multifrontal: cholesky!, complete!, complete_dense!, uncholesky!, copyto!, similar, selaxpby!
-using CliqueTrees.Multifrontal: fisher_impl!, fisherroot_impl!, complete_impl!, chol_impl!, unchol_impl!, selinv_impl!, div_impl!, mt_div_impl!, amari!, amari_impl!
+using CliqueTrees.Multifrontal: fisher_impl!, fisherroot_impl!, complete_impl!, chol_impl!, chol_piv_impl!, unchol_impl!, selinv_impl!, div_impl!, div_piv_impl!, mt_div_impl!, amari!, amari_impl!, DynamicRegularization
 using CliqueTrees.Multifrontal: potrf!, pstrf!, trsm!, trsv!, gemm!, gemv!, syrk!, symmtri!
 using CliqueTrees.Multifrontal: fronts, diagblock, offdblock, ndz, ncl, nlz, nfr, half, eltypedegree, flatindex, getflatindex, setflatindex!, neighbors
 using CliqueTrees.Multifrontal: logdet, cong, parent, triangular, symbolic, sympermute, sympermute!, symdot
