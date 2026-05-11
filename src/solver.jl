@@ -123,17 +123,14 @@ function Base.show(io::IO, ::MIME"text/plain", solver::Solver{UPLO, T, J}) where
     show_solver(io, solver, 2)
 end
 
-function update_state!(
-        state::State{UPLO, T, J},
-        history::History{T},
-        rhs::PrimalDualSlack{UPLO, T, J},
-        res::PrimalDualSlack{UPLO, T, J},
-        problem::Problem{T, J},
-        settings::Settings{T},
-        resy0::T,
-        resx0::T,
-    ) where {UPLO, T, J}
+function update_state!(solver::Solver{UPLO, T, J}, settings::Settings{T}) where {UPLO, T, J}
+    state = solver.curr
     itr = state.itr
+    problem = solver.problem
+    rhs = solver.rhs
+    res = solver.res
+    resy0 = solver.resy0
+    resx0 = solver.resx0
     n = ncl(state)
 
     state.pobj = symdot(itr.primal.X, problem.C)
@@ -160,7 +157,7 @@ function update_state!(
     state.status = check_termination(state, settings)
 
     if state.status == CONTINUE
-        check_slow_progress!(state, history, settings)
+        check_slow_progress!(state, solver.history, settings)
     end
 
     return state
@@ -497,7 +494,6 @@ end
 
 function solve_loop!(
         state::State{UPLO, T, J},
-        history::History{T},
         space::Workspace{T, J},
         cache::KKT{T},
         pd1::PrimalDualSlack{UPLO, T, J},
@@ -512,43 +508,35 @@ function solve_loop!(
         problem::Problem{T, J},
         settings::Settings{T},
         scaling::Val{SCALE},
-        resy0::T,
-        resx0::T,
     ) where {UPLO, T, J, SCALE}
     itr = state.itr
 
-    update_state!(state, history, rhs, res, problem, settings, resy0, resx0)
-
-    settings.verbose && print_loop(state)
-
     min_res_norm = T(1e-4) * max(state.pres, state.dres, abs(state.pobj - state.dobj + kap(state)))
 
-    if state.status == CONTINUE
-        if SCALE
-            p = itr.primal
-            x = itr.primal
-        else
-            p = itr.slack
-            x = q
-        end
+    if SCALE
+        p = itr.primal
+        x = itr.primal
+    else
+        p = itr.slack
+        x = q
+    end
 
-        @timeit TIMER "cone_factor" flag = factorize!(space, L, p, scaling)
+    @timeit TIMER "cone_factor" flag = factorize!(space, L, p, scaling)
 
-        if flag
-            @timeit TIMER "gradient" gradient!(space, q, L, p, scaling)
-            @timeit TIMER "build_kkt" flag = build_kkt!(space, cache, x, res.primal, L, problem, state.μ, scaling)
-        end
+    if flag
+        @timeit TIMER "gradient" gradient!(space, q, L, p, scaling)
+        @timeit TIMER "build_kkt" flag = build_kkt!(space, cache, x, res.primal, L, problem, state.μ, scaling)
+    end
 
-        if flag
-            @timeit TIMER "combined" state.status, step, state.prox = combined_phase!(
-                space, cache,
-                itr, pd1, pd2, cd1, cd2, rhs, wrk, res,
-                x, q, L,
-                problem,
-                state.μ, settings.prox_bound, min_res_norm, scaling)
-        else
-            state.status = NUMERICAL_FAILURE
-        end
+    if flag
+        @timeit TIMER "combined" state.status, step, state.prox = combined_phase!(
+            space, cache,
+            itr, pd1, pd2, cd1, cd2, rhs, wrk, res,
+            x, q, L,
+            problem,
+            state.μ, settings.prox_bound, min_res_norm, scaling)
+    else
+        state.status = NUMERICAL_FAILURE
     end
 end
 
@@ -606,32 +594,35 @@ function CommonSolve.solve!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Se
 end
 
 function CommonSolve.step!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Settings{T}()) where {UPLO, T, J}
-    if settings.scaling
-        solve_loop!(
-            solver.curr, solver.history,
-            solver.space, solver.cache,
-            solver.pd1, solver.pd2, solver.cd1, solver.cd2,
-            solver.rhs, solver.wrk, solver.res,
-            solver.q, solver.L,
-            solver.problem,
-            settings, Val(true),
-            solver.resy0, solver.resx0)
-    else
-        solve_loop!(
-            solver.curr, solver.history,
-            solver.space, solver.cache,
-            solver.pd1, solver.pd2, solver.cd1, solver.cd2,
-            solver.rhs, solver.wrk, solver.res,
-            solver.q, solver.L,
-            solver.problem,
-            settings, Val(false),
-            solver.resy0, solver.resx0)
-    end
+    update_state!(solver, settings)
+    settings.verbose && print_loop(solver.curr)
 
     push!(solver.history, solver.curr)
 
     if score(solver.curr) < score(solver.best)
         copyto!(solver.best, solver.curr)
+    end
+
+    if solver.curr.status == CONTINUE
+        if settings.scaling
+            solve_loop!(
+                solver.curr,
+                solver.space, solver.cache,
+                solver.pd1, solver.pd2, solver.cd1, solver.cd2,
+                solver.rhs, solver.wrk, solver.res,
+                solver.q, solver.L,
+                solver.problem,
+                settings, Val(true))
+        else
+            solve_loop!(
+                solver.curr,
+                solver.space, solver.cache,
+                solver.pd1, solver.pd2, solver.cd1, solver.cd2,
+                solver.rhs, solver.wrk, solver.res,
+                solver.q, solver.L,
+                solver.problem,
+                settings, Val(false))
+        end
     end
 
     solver.curr.nitr += 1
