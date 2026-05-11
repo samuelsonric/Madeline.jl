@@ -11,6 +11,7 @@
     prox_bound::T   = T(0.99)
     scaling::Bool   = true
     equilibration::Bool = true
+    pivot::Bool     = false
     verbose::Bool   = true
 end
 

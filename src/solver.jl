@@ -66,7 +66,7 @@ struct Solver{UPLO, T, J, Chol <: AbstractCholesky{T}}
     resx0::T
 end
 
-function Solver(problem::Problem{T, J}; window::Int=10) where {T<:Real, J<:Integer}
+function Solver(problem::Problem{T, J}, settings::Settings{T}=Settings{T}()) where {T<:Real, J<:Integer}
     G = problem.G
     C = problem.C
     A = problem.A
@@ -75,11 +75,11 @@ function Solver(problem::Problem{T, J}; window::Int=10) where {T<:Real, J<:Integ
 
     m = size(A, 2)
 
-    cache = KKT{T}(problem)
+    cache = KKT{T}(problem; pivot=settings.pivot)
 
     curr = State{:L, T}(m, S, G)
     best = State{:L, T}(m, S, G)
-    history = History{T}(window)
+    history = History{T}(10)
 
     initialize!(curr.itr, cache, problem)
     copyto!(best, curr)
@@ -563,12 +563,12 @@ end
 
 # ===== CommonSolve Interface =====
 
-function CommonSolve.init(::Type{Solver}, problem::Problem)
-    return Solver(problem)
+function CommonSolve.init(::Type{Solver}, problem::Problem{T}; settings::Settings{T}=Settings{T}()) where {T}
+    return Solver(problem, settings)
 end
 
 function CommonSolve.solve(problem::Problem{T}; settings::Settings{T}=Settings{T}()) where {T}
-    solver = Solver(problem)
+    solver = Solver(problem, settings)
     return solve!(solver; settings)
 end
 

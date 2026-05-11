@@ -51,20 +51,28 @@ function trilinegraph_ne(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) w
     return m + n  # off-diagonal + diagonal
 end
 
-function makecholesky(problem::Problem{T, I}) where {T, I}
+function makecholesky(problem::Problem{T, I}, pivot::Bool) where {T, I}
     n = size(problem.A, 2)
     m = constraint_graph_nnz(problem)
 
     if 2m + n < SPARSITY_THRESHOLD_SCHUR * n * n
-        return SparseCholeskyPivoted{T, I}(constraint_graph(problem), problem.max_cons_per_cc)
+        if pivot
+            return SparseCholeskyPivoted{T, I}(constraint_graph(problem), problem.max_cons_per_cc)
+        else
+            return SparseCholesky{T, I}(constraint_graph(problem), problem.max_cons_per_cc)
+        end
     else
-        return DenseCholeskyPivoted{T}(n)
+        if pivot
+            return DenseCholeskyPivoted{T}(n)
+        else
+            return DenseCholesky{T}(n)
+        end
     end
 end
 
-function KKT{T}(problem::Problem{T}) where {T}
+function KKT{T}(problem::Problem{T}; pivot::Bool=false) where {T}
     m = size(problem.A, 2)
-    chol = makecholesky(problem)
+    chol = makecholesky(problem, pivot)
     U = FMatrix{T}(undef, problem.max_cc_rows, problem.max_rhs_per_cc)
     V = FMatrix{T}(undef, problem.max_rhs_per_cc, problem.max_rhs_per_cc)
     W = FMatrix{T}(undef, problem.max_cons_per_cc, problem.max_cons_per_cc)
