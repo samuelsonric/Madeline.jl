@@ -10,9 +10,12 @@ struct SparseCholeskyPivoted{T, I} <: AbstractCholesky{T}
     piv::FVector{BlasInt} # workspace for pivots
     mval::FVector{I}      # workspace for pivoting
     fval::FVector{I}      # workspace for pivoting
+    static_regularization::T
+    dynamic_regularization_eps::T
+    dynamic_regularization_delta::T
 end
 
-function SparseCholeskyPivoted{T, I}(pattern::SparseMatrixCSC, k::Integer) where {T, I}
+function SparseCholeskyPivoted{T, I}(pattern::SparseMatrixCSC, k::Integer, static_regularization::T, dynamic_regularization_eps::T, dynamic_regularization_delta::T) where {T, I}
     F = FChordalCholesky{:L, T, I}(pattern)
     n = size(F, 1)
     L = F.L
@@ -28,11 +31,11 @@ function SparseCholeskyPivoted{T, I}(pattern::SparseMatrixCSC, k::Integer) where
     mval = FVector{I}(undef, L.S.nNval)
     fval = FVector{I}(undef, L.S.nFval)
 
-    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval)
+    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval, static_regularization, dynamic_regularization_eps, dynamic_regularization_delta)
 end
 
 function setzero!(chol::SparseCholeskyPivoted{T}) where {T}
-    fill!(chol.F.L, zero(T))
+    axpby!(chol.static_regularization, I, zero(T), chol.F.L)
     return chol
 end
 

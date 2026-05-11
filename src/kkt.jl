@@ -51,28 +51,31 @@ function trilinegraph_ne(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) w
     return m + n  # off-diagonal + diagonal
 end
 
-function makecholesky(problem::Problem{T, I}, pivot::Bool) where {T, I}
+function makecholesky(problem::Problem{T, I}, settings::Settings{T}) where {T, I}
     n = size(problem.A, 2)
     m = constraint_graph_nnz(problem)
+    sr = settings.static_regularization
+    de = settings.dynamic_regularization_eps
+    dd = settings.dynamic_regularization_delta
 
     if 2m + n < SPARSITY_THRESHOLD_SCHUR * n * n
-        if pivot
-            return SparseCholeskyPivoted{T, I}(constraint_graph(problem), problem.max_cons_per_cc)
+        if settings.pivot
+            return SparseCholeskyPivoted{T, I}(constraint_graph(problem), problem.max_cons_per_cc, sr, de, dd)
         else
-            return SparseCholesky{T, I}(constraint_graph(problem), problem.max_cons_per_cc)
+            return SparseCholesky{T, I}(constraint_graph(problem), problem.max_cons_per_cc, sr, de, dd)
         end
     else
-        if pivot
-            return DenseCholeskyPivoted{T}(n)
+        if settings.pivot
+            return DenseCholeskyPivoted{T}(n, sr, de, dd)
         else
-            return DenseCholesky{T}(n)
+            return DenseCholesky{T}(n, sr, de, dd)
         end
     end
 end
 
-function KKT{T}(problem::Problem{T}; pivot::Bool=false) where {T}
+function KKT{T}(problem::Problem{T}, settings::Settings{T}) where {T}
     m = size(problem.A, 2)
-    chol = makecholesky(problem, pivot)
+    chol = makecholesky(problem, settings)
     U = FMatrix{T}(undef, problem.max_cc_rows, problem.max_rhs_per_cc)
     V = FMatrix{T}(undef, problem.max_rhs_per_cc, problem.max_rhs_per_cc)
     W = FMatrix{T}(undef, problem.max_cons_per_cc, problem.max_cons_per_cc)

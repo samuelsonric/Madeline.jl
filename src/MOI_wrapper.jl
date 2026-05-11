@@ -126,7 +126,8 @@ MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 const _SUPPORTED_ATTRS = (
     "rel_opt", "abs_opt", "feas", "infeas", "tau_infeas",
     "illposed", "slow", "near_factor", "iter_limit", "prox_bound",
-    "scaling", "equilibration", "verbose",
+    "static_regularization", "dynamic_regularization_eps", "dynamic_regularization_delta",
+    "scaling", "equilibration", "pivot", "verbose",
 )
 
 function MOI.supports(::Optimizer, attr::MOI.RawOptimizerAttribute)
@@ -136,31 +137,39 @@ end
 function MOI.set(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute, value)
     name = attr.name
     if name == "rel_opt"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., rel_opt=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., rel_opt=Float64(value))
     elseif name == "abs_opt"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., abs_opt=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., abs_opt=Float64(value))
     elseif name == "feas"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., feas=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., feas=Float64(value))
     elseif name == "infeas"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., infeas=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., infeas=Float64(value))
     elseif name == "tau_infeas"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., tau_infeas=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., tau_infeas=Float64(value))
     elseif name == "illposed"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., illposed=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., illposed=Float64(value))
     elseif name == "slow"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., slow=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., slow=Float64(value))
     elseif name == "near_factor"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., near_factor=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., near_factor=Float64(value))
     elseif name == "iter_limit"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., iter_limit=Int(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., iter_limit=Int(value))
     elseif name == "prox_bound"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., prox_bound=Float64(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., prox_bound=Float64(value))
+    elseif name == "static_regularization"
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., static_regularization=Float64(value))
+    elseif name == "dynamic_regularization_eps"
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., dynamic_regularization_eps=Float64(value))
+    elseif name == "dynamic_regularization_delta"
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., dynamic_regularization_delta=Float64(value))
     elseif name == "scaling"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., scaling=Bool(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., scaling=Bool(value))
     elseif name == "equilibration"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., equilibration=Bool(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., equilibration=Bool(value))
+    elseif name == "pivot"
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., pivot=Bool(value))
     elseif name == "verbose"
-        optimizer.settings = Settings(; _copy_settings(optimizer.settings)..., verbose=Bool(value))
+        optimizer.settings = Settings{Float64}(; _copy_settings(optimizer.settings)..., verbose=Bool(value))
     else
         throw(MOI.UnsupportedAttribute(attr))
     end
@@ -189,10 +198,18 @@ function MOI.get(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute)
         return optimizer.settings.iter_limit
     elseif name == "prox_bound"
         return optimizer.settings.prox_bound
+    elseif name == "static_regularization"
+        return optimizer.settings.static_regularization
+    elseif name == "dynamic_regularization_eps"
+        return optimizer.settings.dynamic_regularization_eps
+    elseif name == "dynamic_regularization_delta"
+        return optimizer.settings.dynamic_regularization_delta
     elseif name == "scaling"
         return optimizer.settings.scaling
     elseif name == "equilibration"
         return optimizer.settings.equilibration
+    elseif name == "pivot"
+        return optimizer.settings.pivot
     elseif name == "verbose"
         return optimizer.settings.verbose
     else
@@ -212,8 +229,12 @@ function _copy_settings(s::Settings)
         near_factor = s.near_factor,
         iter_limit = s.iter_limit,
         prox_bound = s.prox_bound,
+        static_regularization = s.static_regularization,
+        dynamic_regularization_eps = s.dynamic_regularization_eps,
+        dynamic_regularization_delta = s.dynamic_regularization_delta,
         scaling = s.scaling,
         equilibration = s.equilibration,
+        pivot = s.pivot,
         verbose = s.verbose,
     )
 end
@@ -427,7 +448,7 @@ function _optimize!(dest::Optimizer, src::OptimizerCache)
     else
         dest.equil = EquilibrationResult{Float64}(m)
     end
-    settings = Settings(
+    settings = Settings{Float64}(
         rel_opt = dest.settings.rel_opt,
         abs_opt = dest.settings.abs_opt,
         feas = dest.settings.feas,
@@ -438,8 +459,12 @@ function _optimize!(dest::Optimizer, src::OptimizerCache)
         near_factor = dest.settings.near_factor,
         iter_limit = dest.settings.iter_limit,
         prox_bound = dest.settings.prox_bound,
+        static_regularization = dest.settings.static_regularization,
+        dynamic_regularization_eps = dest.settings.dynamic_regularization_eps,
+        dynamic_regularization_delta = dest.settings.dynamic_regularization_delta,
         scaling = dest.settings.scaling,
         equilibration = dest.settings.equilibration,
+        pivot = dest.settings.pivot,
         verbose = !dest.silent,
     )
     dest.result = solve(problem; settings)

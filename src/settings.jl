@@ -9,6 +9,9 @@
     near_factor::T  = T(1000)
     iter_limit::Int = 1000
     prox_bound::T   = T(0.99)
+    static_regularization::T = zero(T)
+    dynamic_regularization_eps::T = zero(T)
+    dynamic_regularization_delta::T = cbrt(eps(T))
     scaling::Bool   = true
     equilibration::Bool = true
     pivot::Bool     = false

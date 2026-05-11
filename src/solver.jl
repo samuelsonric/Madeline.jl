@@ -75,7 +75,7 @@ function Solver(problem::Problem{T, J}, settings::Settings{T}=Settings{T}()) whe
 
     m = size(A, 2)
 
-    cache = KKT{T}(problem; pivot=settings.pivot)
+    cache = KKT{T}(problem, settings)
 
     curr = State{:L, T}(m, S, G)
     best = State{:L, T}(m, S, G)

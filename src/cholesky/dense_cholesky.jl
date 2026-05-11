@@ -1,12 +1,15 @@
 struct DenseCholesky{T} <: AbstractCholesky{T}
     L::FMatrix{T}
     temp::FVector{T}
+    static_regularization::T
+    dynamic_regularization_eps::T
+    dynamic_regularization_delta::T
 end
 
-function DenseCholesky{T}(m::Integer) where {T}
+function DenseCholesky{T}(m::Integer, static_regularization::T, dynamic_regularization_eps::T, dynamic_regularization_delta::T) where {T}
     L = FMatrix{T}(undef, m, m)
     temp = FVector{T}(undef, m)
-    return DenseCholesky(L, temp)
+    return DenseCholesky(L, temp, static_regularization, dynamic_regularization_eps, dynamic_regularization_delta)
 end
 
 function factorize!(chol::DenseCholesky{T}) where {T}
@@ -15,7 +18,7 @@ function factorize!(chol::DenseCholesky{T}) where {T}
 end
 
 function setzero!(chol::DenseCholesky{T}) where {T}
-    fill!(chol.L, zero(T))
+    axpby!(chol.static_regularization, I, zero(T), chol.L)
     return chol
 end
 

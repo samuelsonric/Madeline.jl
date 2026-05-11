@@ -4,14 +4,17 @@ mutable struct DenseCholeskyPivoted{T} <: AbstractCholesky{T}
     const work::FVector{T}
     const temp::FVector{T}
     rank::Int
+    const static_regularization::T
+    const dynamic_regularization_eps::T
+    const dynamic_regularization_delta::T
 end
 
-function DenseCholeskyPivoted{T}(m::Integer) where {T}
+function DenseCholeskyPivoted{T}(m::Integer, static_regularization::T, dynamic_regularization_eps::T, dynamic_regularization_delta::T) where {T}
     L = FMatrix{T}(undef, m, m)
     perm = FVector{BlasInt}(undef, m)
     work = FVector{T}(undef, 2m)
     temp = FVector{T}(undef, m)
-    return DenseCholeskyPivoted(L, perm, work, temp, 0)
+    return DenseCholeskyPivoted(L, perm, work, temp, 0, static_regularization, dynamic_regularization_eps, dynamic_regularization_delta)
 end
 
 function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
@@ -20,7 +23,7 @@ function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
 end
 
 function setzero!(chol::DenseCholeskyPivoted{T}) where {T}
-    fill!(chol.L, zero(T))
+    axpby!(chol.static_regularization, I, zero(T), chol.L)
     return chol
 end
 
