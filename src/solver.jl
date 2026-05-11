@@ -639,12 +639,18 @@ function CommonSolve.step!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Set
 end
 
 function stop!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Settings{T}()) where {UPLO, T, J}
-    if solver.curr.status in (SLOW_PROGRESS, NUMERICAL_FAILURE, ITERATION_LIMIT)
-        settings.verbose && print_restored(solver.best)
+    flag = solver.curr.status in (SLOW_PROGRESS, NUMERICAL_FAILURE, ITERATION_LIMIT)
+
+    if flag
         copyto!(solver.curr, solver.best)
     end
 
     check_termination_near!(solver.curr, settings)
-    settings.verbose && print_terminated(solver.curr)
+
+    if settings.verbose
+        print_terminated(solver.curr)
+        flag && print_restored(solver.best)
+    end
+
     return Result(solver)
 end
