@@ -1,3 +1,14 @@
+struct SparseCholesky{T, I} <: AbstractCholesky{T}
+    F::FChordalCholesky{:L, T, I}
+    W::FMatrix{T}         # workspace for permuted W matrix
+    prm::FVector{I}       # workspace for sorting permutation
+    ivp::FVector{I}       # workspace for inverse permutation
+    Mptr::FVector{I}      # workspace for ldiv
+    Mval::FVector{T}      # workspace for ldiv
+    Fval::FVector{T}      # workspace for ldiv
+    temp::FVector{T}      # workspace for permuted rhs
+end
+
 function SparseCholesky{T, I}(pattern::SparseMatrixCSC, k::Integer) where {T, I}
     F = FChordalCholesky{:L, T, I}(pattern)
     n = size(F, 1)
@@ -11,17 +22,6 @@ function SparseCholesky{T, I}(pattern::SparseMatrixCSC, k::Integer) where {T, I}
     temp = FVector{T}(undef, n)
 
     return SparseCholesky(F, W, prm, ivp, Mptr, Mval, Fval, temp)
-end
-
-struct SparseCholesky{T, I} <: AbstractCholesky{T}
-    F::FChordalCholesky{:L, T, I}
-    W::FMatrix{T}         # workspace for permuted W matrix
-    prm::FVector{I}       # workspace for sorting permutation
-    ivp::FVector{I}       # workspace for inverse permutation
-    Mptr::FVector{I}      # workspace for ldiv
-    Mval::FVector{T}      # workspace for ldiv
-    Fval::FVector{T}      # workspace for ldiv
-    temp::FVector{T}      # workspace for permuted rhs
 end
 
 function setzero!(chol::SparseCholesky{T}) where {T}
@@ -68,7 +68,7 @@ function add_clique_impl!(L::FChordalTriangular{:N, :L, T, I}, W::AbstractMatrix
 
     rlo = first(res)
     rhi = last(res)
-    
+
     if !isempty(sep)
         slo = first(sep)
         shi = last(sep)
@@ -82,10 +82,10 @@ function add_clique_impl!(L::FChordalTriangular{:N, :L, T, I}, W::AbstractMatrix
 
             D, res = diagblock(L, f)
             B, sep = offdblock(L, f)
-            
+
             rlo = first(res)
             rhi = last(res)
-            
+
             if !isempty(sep)
                 slo = first(sep)
                 shi = last(sep)
