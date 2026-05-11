@@ -66,7 +66,7 @@ struct Solver{UPLO, T, J, Chol <: AbstractCholesky{T}}
     resx0::T
 end
 
-function Solver(problem::Problem{T, J}; history_window::Int=5) where {T<:Real, J<:Integer}
+function Solver(problem::Problem{T, J}; window::Int=10) where {T<:Real, J<:Integer}
     G = problem.G
     C = problem.C
     A = problem.A
@@ -79,7 +79,7 @@ function Solver(problem::Problem{T, J}; history_window::Int=5) where {T<:Real, J
 
     curr = State{:L, T}(m, S, G)
     best = State{:L, T}(m, S, G)
-    history = History{T}(history_window)
+    history = History{T}(window)
 
     initialize!(curr.itr, cache, problem)
     copyto!(best, curr)
@@ -165,7 +165,6 @@ end
 
 function check_slow_progress!(solver::Solver{UPLO, T, J}, settings::Settings{T}) where {UPLO, T, J}
     state = solver.curr
-    best = solver.best
     history = solver.history
 
     if state.nitr > history.n && max_abs_diff(history) < settings.slow
@@ -173,7 +172,7 @@ function check_slow_progress!(solver::Solver{UPLO, T, J}, settings::Settings{T})
         return state
     end
 
-    if state.nitr > 0 && score(state) > 100 * score(best)
+    if state.nitr > history.n && score(state) > firstscore(history, state.nitr)
         state.status = SLOW_PROGRESS
     end
 

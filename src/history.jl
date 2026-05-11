@@ -36,3 +36,8 @@ function max_abs_diff(h::History{T}) where T
     end
     return val
 end
+
+function firstscore(h::History{T}, nitr::Int) where T
+    i = mod1(nitr + 1, h.n)
+    return max(h.pres[i], h.dres[i]) / h.τ[i]
+end
