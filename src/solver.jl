@@ -157,13 +157,18 @@ function update_state!(solver::Solver{UPLO, T, J}, settings::Settings{T}) where 
     state.status = check_termination(state, settings)
 
     if state.status == CONTINUE
-        check_slow_progress!(state, solver.history, settings)
+        check_slow_progress!(solver, settings)
     end
 
     return state
 end
 
-function check_slow_progress!(state::State{UPLO, T, I}, history::History{T}, settings::Settings{T}) where {UPLO, T, I}
+function check_slow_progress!(solver::Solver{UPLO, T, J}, settings::Settings{T}) where {UPLO, T, J}
+    state = solver.curr
+    best = solver.best
+    history = solver.history
+
+    # Stall detection: small variation over history window
     Δ = max_abs_diff(history)
 
     if state.nitr > 0 && Δ < settings.slow
@@ -173,6 +178,12 @@ function check_slow_progress!(state::State{UPLO, T, I}, history::History{T}, set
     end
 
     if state.nslw >= 3
+        state.status = SLOW_PROGRESS
+        return state
+    end
+
+    # Divergence detection: current much worse than best
+    if state.nitr > 0 && score(state) > 100 * score(best)
         state.status = SLOW_PROGRESS
     end
 
