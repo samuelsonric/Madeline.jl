@@ -31,7 +31,7 @@ function makecholesky(problem::Problem{T, I}) where {T, I}
     m = ne(graph)
 
     if 2m + n < SPARSITY_THRESHOLD_SCHUR * n * n
-        return SparseCholesky{T, I}(sparse(graph), problem.k)
+        return SparseCholesky{T, I}(sparse(graph), problem.max_cons_per_cc)
     else
         return DenseCholeskyPivoted{T}(n)
     end
