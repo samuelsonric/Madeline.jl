@@ -1,5 +1,4 @@
-mutable struct State{T}
-    const ncol::Int
+mutable struct State{UPLO, T, I}
     nitr::Int
     nslw::Int
     pobj::T
@@ -9,54 +8,63 @@ mutable struct State{T}
     pinf::T
     dinf::T
     prox::T
-    τ::T
-    κ::T
     μ::T
     status::Status
+    const itr::PrimalDualSlack{UPLO, T, I}
 end
 
-function State{T}(n::Int) where {T}
-    return State{T}(
-        n, 0, 0,
+# Accessors for values stored in itr
+tau(s::State) = s.itr.primal.τ
+kap(s::State) = s.itr.slack.τ
+Multifrontal.ncl(s::State) = size(s.itr.primal.X, 1)
+
+function State{UPLO, T}(m::Integer, S::ChordalSymbolic{I}, G::SparseMatrixCSC) where {UPLO, T, I}
+    itr = PrimalDualSlack{UPLO, T}(m, S, G)
+    return State{UPLO, T, I}(
+        0, 0,
         typemax(T), typemax(T), typemax(T),
         typemax(T), typemax(T), typemax(T),
         typemax(T),
-        one(T), one(T), one(T),
+        one(T),
         CONTINUE,
+        itr,
     )
 end
 
 
-# Derived quantities (computed on the fly from μ, τ, κ, n)
+# Derived quantities
 function gap(s::State)
-    return s.μ * (s.ncol + 1) - s.τ * s.κ
+    return s.μ * (ncl(s) + 1) - tau(s) * kap(s)
 end
 
-function relgap(s::State{T}) where {T}
+# Score for best iterate comparison (lower is better)
+score(s::State) = max(s.pres, s.dres) / tau(s)
+
+function relgap(s::State{UPLO, T, I}) where {UPLO, T, I}
     g = gap(s)
+    τ = tau(s)
     if isnegative(s.pobj)
-        return g / (-s.pobj * s.τ)
+        return g / (-s.pobj * τ)
     elseif ispositive(s.dobj)
-        return g / (s.dobj * s.τ)
+        return g / (s.dobj * τ)
     else
         return typemax(T)
     end
 end
 
 function Base.copyto!(dst::State, src::State)
-    dst.status = src.status
+    # Note: status is NOT copied
     dst.nitr = src.nitr
+    dst.nslw = src.nslw
     dst.pobj = src.pobj
     dst.dobj = src.dobj
     dst.pres = src.pres
     dst.dres = src.dres
     dst.pinf = src.pinf
     dst.dinf = src.dinf
-    dst.τ = src.τ
-    dst.κ = src.κ
-    dst.μ = src.μ
     dst.prox = src.prox
-    dst.nslw = src.nslw
+    dst.μ = src.μ
+    copyto!(dst.itr, src.itr)
     return dst
 end
 
@@ -68,13 +76,13 @@ function print_header()
 end
 
 function print_loop(state::State)
-    τ = state.τ
+    τ = tau(state)
     pobj = state.pobj / τ
     dobj = state.dobj / τ
     g = gap(state) / τ^2
     pres = state.pres / τ
     dres = state.dres / τ
-    κτ = state.κ / τ
+    κτ = kap(state) / τ
 
     if iszero(state.nitr)
         @printf("%5d %12.4e %12.4e |%9.2e %9.2e %9.2e |%9.2e %9.2e |\n",
@@ -88,13 +96,13 @@ function print_loop(state::State)
 end
 
 function show_state(io::IO, state::State, indent::Int)
-    τ = state.τ
+    τ = tau(state)
     pobj = state.pobj / τ
     dobj = state.dobj / τ
     g = gap(state) / τ^2
     pres = state.pres / τ
     dres = state.dres / τ
-    κτ = state.κ / τ
+    κτ = kap(state) / τ
     pad = " "^indent
 
     @printf(io, "%sstatus: %-12s  iter: %d\n", pad, state.status, state.nitr)
@@ -105,9 +113,14 @@ function show_state(io::IO, state::State, indent::Int)
     return
 end
 
-function Base.show(io::IO, ::MIME"text/plain", state::State{T}) where {T}
-    println(io, "State{$T}:")
+function Base.show(io::IO, ::MIME"text/plain", state::State{UPLO, T, I}) where {UPLO, T, I}
+    println(io, "State{:$UPLO, $T, $I}:")
     show_state(io, state, 2)
+end
+
+function print_restored(state::State)
+    println("Restored from iteration $(state.nitr).")
+    return
 end
 
 function print_terminated(state::State)

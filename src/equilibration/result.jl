@@ -44,12 +44,13 @@ end
 """
 function deequilibrate!(result::Result, equil::EquilibrationResult)
     τ = equil.objective
-    lmul!(equil.primal / τ, result.itr.primal.X)
-    result.itr.dual .*= equil.dual
-    result.itr.dual ./= τ
+    itr = result.state.itr
+    lmul!(equil.primal / τ, itr.primal.X)
+    itr.dual .*= equil.dual
+    itr.dual ./= τ
     result.state.pobj /= τ^2
     result.state.dobj /= τ^2
     result.state.μ /= τ^2
-    result.state.κ /= τ^2
+    itr.slack.τ /= τ^2
     return result
 end

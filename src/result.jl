@@ -1,11 +1,10 @@
 struct Result{UPLO, T, I}
     problem::Problem{T, I}
-    state::State{T}
-    itr::PrimalDualSlack{UPLO, T, I}
+    state::State{UPLO, T, I}
 end
 
 function Result(solver::Solver)
-    return Result(solver.problem, solver.curr, solver.itr)
+    return Result(solver.problem, solver.curr)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", result::Result)
@@ -21,21 +20,23 @@ end
 #
 
 function primal(result::Result{UPLO, T, I}) where {UPLO, T, I}
-    τ = result.state.τ
+    τ = tau(result.state)
+    itr = result.state.itr
 
-    n = ncl(result.itr.primal.X)
+    n = ncl(itr.primal.X)
     X = Matrix{T}(undef, n, n)
 
-    complete_dense!(X, result.itr.primal.X)
+    complete_dense!(X, itr.primal.X)
     ldiv!(τ, X)
 
     return sympermute(X, result.problem.P.perm, 'L', 'L')
 end
 
 function primal_inverse(result::Result{UPLO, T, I}) where {UPLO, T, I}
-    τ = result.state.τ
+    τ = tau(result.state)
+    itr = result.state.itr
 
-    L = copy(result.itr.primal.X)
+    L = copy(itr.primal.X)
     complete!(L)
     uncholesky!(L)
     lmul!(τ, L)
@@ -44,21 +45,23 @@ function primal_inverse(result::Result{UPLO, T, I}) where {UPLO, T, I}
 end
 
 function dual(result::Result{UPLO, T, I}) where {UPLO, T, I}
-    τ = result.state.τ
+    τ = tau(result.state)
+    itr = result.state.itr
 
-    m = length(result.itr.dual)
+    m = length(itr.dual)
     y = Vector{T}(undef, m)
 
-    mul!(y, result.problem.Q', result.itr.dual)
+    mul!(y, result.problem.Q', itr.dual)
     ldiv!(τ, y)
 
     return y
 end
 
 function slack(result::Result{UPLO, T, I}) where {UPLO, T, I}
-    τ = result.state.τ
+    τ = tau(result.state)
+    itr = result.state.itr
 
-    Z = sympermute(result.itr.slack.X, result.problem.P.perm, 'L', 'L')
+    Z = sympermute(itr.slack.X, result.problem.P.perm, 'L', 'L')
     ldiv!(τ, Z)
 
     return Z
@@ -69,12 +72,12 @@ end
 #
 
 function primal_objective(result::Result)
-    τ = result.state.τ
+    τ = tau(result.state)
     return result.state.pobj / τ
 end
 
 function dual_objective(result::Result)
-    τ = result.state.τ
+    τ = tau(result.state)
     return result.state.dobj / τ
 end
 
@@ -83,17 +86,17 @@ end
 #
 
 function primal_residual(result::Result)
-    τ = result.state.τ
+    τ = tau(result.state)
     return result.state.pres / τ
 end
 
 function dual_residual(result::Result)
-    τ = result.state.τ
+    τ = tau(result.state)
     return result.state.dres / τ
 end
 
 function gap(result::Result)
-    τ = result.state.τ
+    τ = tau(result.state)
     return gap(result.state) / τ^2
 end
 

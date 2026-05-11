@@ -47,11 +47,11 @@
 # point algorithm.
 
 struct Solver{UPLO, T, J, Chol <: AbstractCholesky{T}}
-    curr::State{T}
-    prev::State{T}
+    curr::State{UPLO, T, J}
+    best::State{UPLO, T, J}
+    history::History{T}
     space::Workspace{T, J}
     cache::KKT{T, Chol}
-    itr::PrimalDualSlack{UPLO, T, J}
     pd1::PrimalDualSlack{UPLO, T, J}
     pd2::PrimalDualSlack{UPLO, T, J}
     cd1::PrimalDualSlack{UPLO, T, J}
@@ -66,25 +66,26 @@ struct Solver{UPLO, T, J, Chol <: AbstractCholesky{T}}
     resx0::T
 end
 
-function Solver(problem::Problem{T, J}) where {T<:Real, J<:Integer}
+function Solver(problem::Problem{T, J}; history_window::Int=5) where {T<:Real, J<:Integer}
     G = problem.G
     C = problem.C
     A = problem.A
     b = problem.b
     S = problem.S
-    P = problem.P
-    Q = problem.Q
 
-    n = size(C, 1)
     m = size(A, 2)
 
     cache = KKT{T}(problem)
 
-    itr = PrimalDualSlack{:L, T}(m, S, G)
-    initialize!(itr, cache, problem)
+    curr = State{:L, T}(m, S, G)
+    best = State{:L, T}(m, S, G)
+    history = History{T}(history_window)
+
+    initialize!(curr.itr, cache, problem)
+    copyto!(best, curr)
 
     q = Primal{:L, T}(S)
-    L = similar(itr.primal.X)
+    L = similar(curr.itr.primal.X)
 
     rhs = PrimalDualSlack{:L, T}(m, S, G)
     pd1 = PrimalDualSlack{:L, T}(m, S, G)
@@ -96,15 +97,12 @@ function Solver(problem::Problem{T, J}) where {T<:Real, J<:Integer}
 
     space = Workspace{T}(S, problem.max_rhs_per_cc)
 
-    curr = State{T}(n)
-    prev = State{T}(n)
-
     resy0 = max(one(T), norm(b))
     resx0 = max(one(T), symnorm(C))
 
     return Solver(
-        curr, prev, space, cache,
-        itr, pd1, pd2, cd1, cd2, rhs, wrk, res,
+        curr, best, history, space, cache,
+        pd1, pd2, cd1, cd2, rhs, wrk, res,
         q, L, problem,
         resy0, resx0)
 end
@@ -126,9 +124,8 @@ function Base.show(io::IO, ::MIME"text/plain", solver::Solver{UPLO, T, J}) where
 end
 
 function update_state!(
-        state::State{T},
-        prev::State{T},
-        itr::PrimalDualSlack{UPLO, T, J},
+        state::State{UPLO, T, J},
+        history::History{T},
         rhs::PrimalDualSlack{UPLO, T, J},
         res::PrimalDualSlack{UPLO, T, J},
         problem::Problem{T, J},
@@ -136,10 +133,9 @@ function update_state!(
         resy0::T,
         resx0::T,
     ) where {UPLO, T, J}
-    n = state.ncol
+    itr = state.itr
+    n = ncl(state)
 
-    state.τ = itr.primal.τ
-    state.κ = itr.slack.τ
     state.pobj = symdot(itr.primal.X, problem.C)
     state.dobj = dot(problem.b, itr.dual)
     state.μ = dot(itr.primal, itr.slack) / (n + 1)
@@ -164,26 +160,14 @@ function update_state!(
     state.status = check_termination(state, settings)
 
     if state.status == CONTINUE
-        check_slow_progress!(state, prev, settings)
+        check_slow_progress!(state, history, settings)
     end
 
     return state
 end
 
-function check_slow_progress!(state::State{T}, prev::State{T}, settings::Settings{T}) where {T}
-    Δ = zero(T)
-
-    p = prev.pres  / prev.τ
-    q = state.pres / state.τ
-    Δ = max(Δ, (p - q) / (abs(p) + eps(T)))
-
-    p = prev.dres  / prev.τ
-    q = state.dres / state.τ
-    Δ = max(Δ, (p - q) / (abs(p) + eps(T)))
-
-    p = gap(prev)  / prev.τ^2
-    q = gap(state) / state.τ^2
-    Δ = max(Δ, (p - q) / (abs(p) + eps(T)))
+function check_slow_progress!(state::State{UPLO, T, I}, history::History{T}, settings::Settings{T}) where {UPLO, T, I}
+    Δ = max_abs_diff(history)
 
     if state.nitr > 0 && Δ < settings.slow
         state.nslw += 1
@@ -468,8 +452,8 @@ function combined_phase!(
     return status, α, prox
 end
 
-function check_termination(state::State{T}, settings::Settings{T}) where {T}
-    τ = state.τ
+function check_termination(state::State{UPLO, T, I}, settings::Settings{T}) where {UPLO, T, I}
+    τ = tau(state)
     pres = state.pres / τ
     dres = state.dres / τ
     g = gap(state) / τ^2
@@ -480,7 +464,7 @@ function check_termination(state::State{T}, settings::Settings{T}) where {T}
         return PRIMAL_INFEASIBLE
     elseif state.dinf <= settings.infeas && τ <= settings.tau_infeas
         return DUAL_INFEASIBLE
-    elseif max(τ, state.κ) <= settings.illposed
+    elseif max(τ, kap(state)) <= settings.illposed
         return ILL_POSED
     elseif state.nitr == settings.iter_limit
         return ITERATION_LIMIT
@@ -489,9 +473,9 @@ function check_termination(state::State{T}, settings::Settings{T}) where {T}
     return CONTINUE
 end
 
-function check_termination_near!(state::State{T}, settings::Settings{T}) where {T}
+function check_termination_near!(state::State{UPLO, T, I}, settings::Settings{T}) where {UPLO, T, I}
     f = settings.near_factor
-    τ = state.τ
+    τ = tau(state)
     pres = state.pres / τ
     dres = state.dres / τ
     g = gap(state) / τ^2
@@ -503,7 +487,7 @@ function check_termination_near!(state::State{T}, settings::Settings{T}) where {
             state.status = NEAR_PRIMAL_INFEASIBLE
         elseif state.dinf <= f * settings.infeas && τ <= f * settings.tau_infeas
             state.status = NEAR_DUAL_INFEASIBLE
-        elseif max(τ, state.κ) <= f * settings.illposed
+        elseif max(τ, kap(state)) <= f * settings.illposed
             state.status = NEAR_ILL_POSED
         end
     end
@@ -512,11 +496,10 @@ function check_termination_near!(state::State{T}, settings::Settings{T}) where {
 end
 
 function solve_loop!(
-        state::State{T},
-        prev::State{T},
+        state::State{UPLO, T, J},
+        history::History{T},
         space::Workspace{T, J},
         cache::KKT{T},
-        itr::PrimalDualSlack{UPLO, T, J},
         pd1::PrimalDualSlack{UPLO, T, J},
         pd2::PrimalDualSlack{UPLO, T, J},
         cd1::PrimalDualSlack{UPLO, T, J},
@@ -532,12 +515,13 @@ function solve_loop!(
         resy0::T,
         resx0::T,
     ) where {UPLO, T, J, SCALE}
+    itr = state.itr
 
-    update_state!(state, prev, itr, rhs, res, problem, settings, resy0, resx0)
+    update_state!(state, history, rhs, res, problem, settings, resy0, resx0)
 
     settings.verbose && print_loop(state)
 
-    min_res_norm = T(1e-4) * max(state.pres, state.dres, abs(state.pobj - state.dobj + state.κ))
+    min_res_norm = T(1e-4) * max(state.pres, state.dres, abs(state.pobj - state.dobj + kap(state)))
 
     if state.status == CONTINUE
         if SCALE
@@ -624,9 +608,9 @@ end
 function CommonSolve.step!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Settings{T}()) where {UPLO, T, J}
     if settings.scaling
         solve_loop!(
-            solver.curr, solver.prev,
+            solver.curr, solver.history,
             solver.space, solver.cache,
-            solver.itr, solver.pd1, solver.pd2, solver.cd1, solver.cd2,
+            solver.pd1, solver.pd2, solver.cd1, solver.cd2,
             solver.rhs, solver.wrk, solver.res,
             solver.q, solver.L,
             solver.problem,
@@ -634,9 +618,9 @@ function CommonSolve.step!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Set
             solver.resy0, solver.resx0)
     else
         solve_loop!(
-            solver.curr, solver.prev,
+            solver.curr, solver.history,
             solver.space, solver.cache,
-            solver.itr, solver.pd1, solver.pd2, solver.cd1, solver.cd2,
+            solver.pd1, solver.pd2, solver.cd1, solver.cd2,
             solver.rhs, solver.wrk, solver.res,
             solver.q, solver.L,
             solver.problem,
@@ -644,18 +628,23 @@ function CommonSolve.step!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Set
             solver.resy0, solver.resx0)
     end
 
-    copyto!(solver.prev, solver.curr)
-    solver.curr.nitr += 1
+    push!(solver.history, solver.curr)
 
+    if score(solver.curr) < score(solver.best)
+        copyto!(solver.best, solver.curr)
+    end
+
+    solver.curr.nitr += 1
     return solver.curr.status
 end
 
 function stop!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Settings{T}()) where {UPLO, T, J}
-    check_termination_near!(solver.curr, settings)
-
-    if settings.verbose
-        print_terminated(solver.curr)
+    if solver.curr.status in (SLOW_PROGRESS, NUMERICAL_FAILURE, ITERATION_LIMIT)
+        settings.verbose && print_restored(solver.best)
+        copyto!(solver.curr, solver.best)
     end
 
+    check_termination_near!(solver.curr, settings)
+    settings.verbose && print_terminated(solver.curr)
     return Result(solver)
 end
