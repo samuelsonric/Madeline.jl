@@ -618,8 +618,7 @@ end
 function start!(solver::Solver{UPLO, T, J}; settings::Settings{T}=Settings{T}()) where {UPLO, T, J}
     if settings.verbose
         show_banner(stdout, 0)
-        println("problem:")
-        show_problem(stdout, solver.problem, 2)
+        show_problem(stdout, solver.problem, 0)
         println()
         println()
         println("settings:")

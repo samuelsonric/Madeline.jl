@@ -202,7 +202,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
     return cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc
 end
 
-struct Problem{T, I, DualPerm, DualSymb}
+struct Problem{T, I, DualPat, DualPerm, DualSymb}
     G::SparseMatrixCSC{T, I}
     C::SparseMatrixCSC{T, I}
     A::SparseMatrixCSC{T, I}
@@ -228,13 +228,14 @@ struct Problem{T, I, DualPerm, DualSymb}
     max_rhs_per_cc::I
     max_cc_rows::I
     max_cons_per_cc::I
-    # Dual (Schur complement) symbolic factorization
+    # Dual (Schur complement) sparsity pattern and symbolic factorization
+    dual_patt::DualPat
     dual_perm::DualPerm
     dual_symb::DualSymb
 end
 
-const DenseProblem{T, I} = Problem{T, I, Nothing, Nothing}
-const SparseProblem{T, I} = Problem{T, I, FPermutation{I}, ChordalSymbolic{I}}
+const DenseProblem{T, I} = Problem{T, I, Nothing, Nothing, Nothing}
+const SparseProblem{T, I} = Problem{T, I, SparseMatrixCSC{T, I}, FPermutation{I}, ChordalSymbolic{I}}
 
 function linegraph_sparsity(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) where {I}
     n = nv(ve)
@@ -308,13 +309,15 @@ function Problem(
     # Compute dual (Schur complement) symbolic factorization if sparse
     if schur_sparsity > SPARSITY_THRESHOLD_SCHUR
         @timeit TIMER "linegraph" LG = linegraph(cons_to_cc, cc_to_cons)
-        @timeit TIMER "dual_symbolic" dual_perm, dual_symb = symbolic(LG; alg)
+        @timeit TIMER "dual_patt" dual_patt = sparse(T, I, LG)
+        @timeit TIMER "dual_symbolic" dual_perm, dual_symb = symbolic(dual_patt; alg)
     else
+        dual_patt = nothing
         dual_perm = nothing
         dual_symb = nothing
     end
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc, dual_perm, dual_symb)
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc, dual_patt, dual_perm, dual_symb)
 end
 
 function Problem(
@@ -354,6 +357,7 @@ function Base.copy(problem::Problem)
         problem.max_rhs_per_cc,
         problem.max_cc_rows,
         problem.max_cons_per_cc,
+        problem.dual_patt,
         problem.dual_perm,
         problem.dual_symb,
     )
@@ -663,65 +667,39 @@ function show_problem(io::IO, problem::Problem, indent::Int)
     S = problem.S
     pad = " "^indent
 
-    t1, t2, t3 = typemin(Int), typemin(Int), typemin(Int)
-    b1, b2, b3 = typemax(Int), typemax(Int), typemax(Int)
-    ncones = nfr(S)
-
-    for j in fronts(S)
-        d = eltypedegree(S.res, j) + eltypedegree(S.sep, j)
-
-        if d > t1
-            t3, t2, t1 = t2, t1, d
-        elseif d > t2
-            t3, t2 = t2, d
-        elseif d > t3
-            t3 = d
-        end
-
-        if d < b1
-            b3, b2, b1 = b2, b1, d
-        elseif d < b2
-            b3, b2 = b2, d
-        elseif d < b3
-            b3 = d
-        end
-    end
-
-    if ncones == 0
-        dimstr = "()"
-    elseif ncones == 1
-        dimstr = "($t1)"
-    elseif ncones == 2
-        dimstr = "($t1, $b1)"
-    elseif ncones == 3
-        dimstr = "($t1, $t2, $b1)"
-    elseif ncones == 4
-        dimstr = "($t1, $t2, $b2, $b1)"
-    elseif ncones == 5
-        dimstr = "($t1, $t2, $t3, $b2, $b1)"
-    elseif ncones == 6
-        dimstr = "($t1, $t2, $t3, $b3, $b2, $b1)"
-    else
-        dimstr = "($t1, $t2, $t3, ..., $b3, $b2, $b1)"
-    end
-
-    println(io, pad, "(P)  min  ⟨C, X⟩               (D)  max  ⟨b, y⟩")
-    println(io, pad, "     s.t. Aᵀ(X) = b                 s.t. A(y) + Z = C")
-    println(io, pad, "          X ⪰ 0                          Z ⪰ 0")
+    println(io, pad, "  (P)  min  ⟨C, X⟩               (D)  max  ⟨b, y⟩")
+    println(io, pad, "       s.t. Aᵀ(X) = b                 s.t. A(y) + Z = C")
+    println(io, pad, "            X ⪰ 0                          Z ⪰ 0")
     println(io)
+    println(io, pad, "problem:")
     dimA = "$n × $n × $m"
     dimC = "$n × $n"
-    @printf(io, "%sdim(A): %-21s  nnz(A): %d\n", pad, dimA, nnz(problem.A))
-    @printf(io, "%sdim(C): %-21s  nnz(C): %d\n", pad, dimC, nnz(problem.C))
-    println(io, pad, "dim(b): $m")
+    @printf(io, "%s  dim(A): %-21s  nnz(A): %d\n", pad, dimA, nnz(problem.A))
+    @printf(io, "%s  dim(C): %-21s  nnz(C): %d\n", pad, dimC, nnz(problem.C))
+    println(io, pad, "  dim(b): $m")
     println(io)
-    println(io, pad, "schur complement:")
-    schur_type = problem isa DenseProblem ? "dense" : "sparse"
-    println(io, pad, "  ", schur_type)
+
+    # Aggregate sparsity (primal Z)
+    println(io, pad, "aggregate sparsity:")
+    nnz_Z = nnz(problem.G)
+    lnz_Z = nnz(S)
+    dimZ = "$n × $n"
+    @printf(io, "%s  dim(Z): %-21s  nnz(Z): %d\n", pad, dimZ, nnz_Z)
+    @printf(io, "%s                                 lnz(Z): %d\n", pad, lnz_Z)
     println(io)
-    println(io, pad, "chordal decomposition:")
-    println(io, pad, "  cones: ", ncones)
-    print(io, pad, "  sizes: ", dimstr)
+
+    # Correlative sparsity (dual Schur complement)
+    println(io, pad, "correlative sparsity:")
+    dimS = "$m × $m"
+    if problem isa DenseProblem
+        nnz_S = m * (m + 1) ÷ 2
+        @printf(io, "%s  dim(S): %-21s  nnz(S): %d  (dense)\n", pad, dimS, nnz_S)
+    else
+        nnz_S = nnz(problem.dual_patt)
+        lnz_S = nnz(problem.dual_symb)
+        @printf(io, "%s  dim(S): %-21s  nnz(S): %d\n", pad, dimS, nnz_S)
+        @printf(io, "%s                                 lnz(S): %d\n", pad, lnz_S)
+    end
     return
 end
 
