@@ -544,6 +544,8 @@ function sympermutepacked_loop!(
     n = convert(I, isqrt(size(A, 1)))
     m = zero(I)
 
+    fill!(work1.colptr, zero(I))
+
     @inbounds for p in nzrange(A, c)
         i, j = cart(n, rowvals(A)[p])
 
@@ -623,11 +625,13 @@ function sympermutepacked(
     work1 = spzeros(T, I, n, n)
     work2 = spzeros(T, I, n, n)
 
+    colptr = Vector{I}(undef, m + one(I))
     rowval = Vector{I}(undef, k)
     nzval = Vector{T}(undef, k)
     p = zero(I)
 
     @inbounds for c in oneto(m)
+        colptr[c] = p + one(I)
         sympermutepacked_loop!(work1, work2, A, invp, src, tgt, c)
 
         for j in oneto(n)
@@ -641,7 +645,9 @@ function sympermutepacked(
         end
     end
 
-    colptr = copy(A.colptr)
+    colptr[m + one(I)] = p + one(I)
+    resize!(rowval, p)
+    resize!(nzval, p)
     return SparseMatrixCSC{T, I}(n * n, m, colptr, rowval, nzval)
 end
 
