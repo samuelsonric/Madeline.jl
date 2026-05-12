@@ -125,8 +125,8 @@ MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 # RawOptimizerAttribute support for all settings
 const _SUPPORTED_ATTRS = (
     "tol_rel_opt", "tol_abs_opt", "tol_feas", "tol_infeas", "tol_tau_infeas",
-    "tol_illposed", "tol_slow", "tol_dynamic", "near_factor", "iter_limit", "prox_bound",
-    "del_static", "del_dynamic", "scaling", "equilibration", "pivot", "verbose",
+    "tol_illposed", "tol_slow", "near_factor", "iter_limit", "prox_bound",
+    "shift", "scaling", "equilibration", "pivot", "verbose",
 )
 
 function MOI.supports(::Optimizer, attr::MOI.RawOptimizerAttribute)
@@ -155,12 +155,8 @@ function MOI.set(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute, value)
         optimizer.settings.iter_limit = Int(value)
     elseif name == "prox_bound"
         optimizer.settings.prox_bound = Float64(value)
-    elseif name == "tol_dynamic"
-        optimizer.settings.tol_dynamic = Float64(value)
-    elseif name == "del_static"
-        optimizer.settings.del_static = Float64(value)
-    elseif name == "del_dynamic"
-        optimizer.settings.del_dynamic = Float64(value)
+    elseif name == "shift"
+        optimizer.settings.shift = Float64(value)
     elseif name == "scaling"
         optimizer.settings.scaling = Bool(value)
     elseif name == "equilibration"
@@ -197,12 +193,8 @@ function MOI.get(optimizer::Optimizer, attr::MOI.RawOptimizerAttribute)
         return optimizer.settings.iter_limit
     elseif name == "prox_bound"
         return optimizer.settings.prox_bound
-    elseif name == "tol_dynamic"
-        return optimizer.settings.tol_dynamic
-    elseif name == "del_static"
-        return optimizer.settings.del_static
-    elseif name == "del_dynamic"
-        return optimizer.settings.del_dynamic
+    elseif name == "shift"
+        return optimizer.settings.shift
     elseif name == "scaling"
         return optimizer.settings.scaling
     elseif name == "equilibration"

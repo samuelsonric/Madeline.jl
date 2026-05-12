@@ -7,12 +7,10 @@ struct SparseCholesky{T, I} <: AbstractCholesky{T}
     Mval::FVector{T}      # workspace for ldiv
     Fval::FVector{T}      # workspace for ldiv
     temp::FVector{T}      # workspace for permuted rhs
-    del_static::T
-    tol_dynamic::T
-    del_dynamic::T
+    shift::T
 end
 
-function SparseCholesky{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T, I}
+function SparseCholesky{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer, shift::T) where {T, I}
     F = FChordalCholesky{:L, T}(P, S)
     n = size(F, 1)
 
@@ -24,24 +22,16 @@ function SparseCholesky{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Inte
     Fval = FVector{T}(undef, max(S.nFval * S.nFval, S.nFval * 2))
     temp = FVector{T}(undef, n)
 
-    return SparseCholesky(F, W, prm, ivp, Mptr, Mval, Fval, temp, del_static, tol_dynamic, del_dynamic)
+    return SparseCholesky(F, W, prm, ivp, Mptr, Mval, Fval, temp, shift)
 end
 
 function setzero!(chol::SparseCholesky{T}) where {T}
-    axpby!(chol.del_static, I, zero(T), chol.F.L)
+    axpby!(chol.shift, I, zero(T), chol.F.L)
     return chol
 end
 
 function factorize!(chol::SparseCholesky{T}) where {T}
-    delta = chol.del_dynamic
-    epsilon = chol.tol_dynamic
-
-    if !ispositive(epsilon)
-        info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
-    else
-        info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L, DynamicRegularization(; delta, epsilon))
-    end
-
+    info = chol_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.F.L)
     return iszero(info)
 end
 

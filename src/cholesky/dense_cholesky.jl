@@ -1,27 +1,17 @@
 struct DenseCholesky{T} <: AbstractCholesky{T}
     L::FMatrix{T}
     temp::FVector{T}
-    del_static::T
-    tol_dynamic::T
-    del_dynamic::T
+    shift::T
 end
 
-function DenseCholesky{T}(m::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T}
+function DenseCholesky{T}(m::Integer, shift::T) where {T}
     L = FMatrix{T}(undef, m, m)
     temp = FVector{T}(undef, m)
-    return DenseCholesky(L, temp, del_static, tol_dynamic, del_dynamic)
+    return DenseCholesky(L, temp, shift)
 end
 
 function factorize!(chol::DenseCholesky{T}) where {T}
-    delta = chol.del_dynamic
-    epsilon = chol.tol_dynamic
-
-    if !ispositive(epsilon)
-        info = potrf!(Val(:L), chol.L)
-    else
-        info = potrf!(Val(:L), chol.L, DynamicRegularization(; delta, epsilon))
-    end
-
+    info = potrf!(Val(:L), chol.L)
     return iszero(info)
 end
 
@@ -29,7 +19,7 @@ function setzero!(chol::DenseCholesky{T}) where {T}
     fill!(chol.L, zero(T))
 
     @inbounds for i in diagind(chol.L)
-        chol.L[i] = chol.del_static
+        chol.L[i] = chol.shift
     end
 
     return chol

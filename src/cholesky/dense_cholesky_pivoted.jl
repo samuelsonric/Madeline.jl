@@ -4,29 +4,19 @@ mutable struct DenseCholeskyPivoted{T} <: AbstractCholesky{T}
     const work::FVector{T}
     const temp::FVector{T}
     rank::Int
-    const del_static::T
-    const tol_dynamic::T
-    const del_dynamic::T
+    const shift::T
 end
 
-function DenseCholeskyPivoted{T}(m::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T}
+function DenseCholeskyPivoted{T}(m::Integer, shift::T) where {T}
     L = FMatrix{T}(undef, m, m)
     perm = FVector{BlasInt}(undef, m)
     work = FVector{T}(undef, 2m)
     temp = FVector{T}(undef, m)
-    return DenseCholeskyPivoted(L, perm, work, temp, 0, del_static, tol_dynamic, del_dynamic)
+    return DenseCholeskyPivoted(L, perm, work, temp, 0, shift)
 end
 
 function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
-    delta = chol.del_dynamic
-    epsilon = chol.tol_dynamic
-
-    if !ispositive(epsilon)
-        _, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm)
-    else
-        _, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm, DynamicRegularization(; delta, epsilon))
-    end
-
+    _, chol.rank = pstrf!(Val(:L), chol.work, chol.L, chol.perm)
     return true
 end
 
@@ -34,7 +24,7 @@ function setzero!(chol::DenseCholeskyPivoted{T}) where {T}
     fill!(chol.L, zero(T))
 
     @inbounds for i in diagind(chol.L)
-        chol.L[i] = chol.del_static
+        chol.L[i] = chol.shift
     end
 
     return chol

@@ -24,30 +24,26 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
 end
 
 function makecholesky(problem::SparseProblem{T, I}, settings::Settings{T}) where {T, I}
-    sr = settings.del_static
-    de = settings.tol_dynamic
-    dd = settings.del_dynamic
+    shift = settings.shift
     k = problem.max_cons_per_cc
     P = problem.dual_perm
     S = problem.dual_symb
 
     if settings.pivot
-        return SparseCholeskyPivoted{T, I}(P, S, k, sr, de, dd)
+        return SparseCholeskyPivoted{T, I}(P, S, k, shift)
     else
-        return SparseCholesky{T, I}(P, S, k, sr, de, dd)
+        return SparseCholesky{T, I}(P, S, k, shift)
     end
 end
 
 function makecholesky(problem::DenseProblem{T, I}, settings::Settings{T}) where {T, I}
-    sr = settings.del_static
-    de = settings.tol_dynamic
-    dd = settings.del_dynamic
+    shift = settings.shift
     m = size(problem.A, 2)
 
     if settings.pivot
-        return DenseCholeskyPivoted{T}(m, sr, de, dd)
+        return DenseCholeskyPivoted{T}(m, shift)
     else
-        return DenseCholesky{T}(m, sr, de, dd)
+        return DenseCholesky{T}(m, shift)
     end
 end
 

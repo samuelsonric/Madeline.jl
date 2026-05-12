@@ -10,12 +10,10 @@ struct SparseCholeskyPivoted{T, I} <: AbstractCholesky{T}
     piv::FVector{BlasInt} # workspace for pivots
     mval::FVector{I}      # workspace for pivoting
     fval::FVector{I}      # workspace for pivoting
-    del_static::T
-    tol_dynamic::T
-    del_dynamic::T
+    shift::T
 end
 
-function SparseCholeskyPivoted{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T, I}
+function SparseCholeskyPivoted{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer, shift::T) where {T, I}
     F = FChordalCholesky{:L, T}(P, S)
     n = size(F, 1)
 
@@ -30,25 +28,17 @@ function SparseCholeskyPivoted{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, 
     mval = FVector{I}(undef, S.nNval)
     fval = FVector{I}(undef, S.nFval)
 
-    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval, del_static, tol_dynamic, del_dynamic)
+    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval, shift)
 end
 
 function setzero!(chol::SparseCholeskyPivoted{T}) where {T}
-    axpby!(chol.del_static, I, zero(T), chol.F.L)
+    axpby!(chol.shift, I, zero(T), chol.F.L)
     return chol
 end
 
 function factorize!(chol::SparseCholeskyPivoted{T}) where {T}
     F = chol.F
-    delta = chol.del_dynamic
-    epsilon = chol.tol_dynamic
-
-    if !ispositive(epsilon)
-        chol_piv_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.piv, chol.mval, chol.fval, F.L, F.perm, F.invp)
-    else
-        chol_piv_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.piv, chol.mval, chol.fval, F.L, F.perm, F.invp, DynamicRegularization(; delta, epsilon))
-    end
-
+    chol_piv_impl!(chol.Mptr, chol.Mval, chol.Fval, chol.piv, chol.mval, chol.fval, F.L, F.perm, F.invp)
     return true
 end
 
@@ -73,11 +63,7 @@ function ldiv_fwd!(chol::SparseCholeskyPivoted{T}, b::AbstractVector{T}) where {
         b[i] = chol.temp[i]
     end
 
-    if !ispositive(chol.tol_dynamic)
-        div_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
-    else
-        div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
-    end
+    div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
 
     return b
 end
@@ -95,11 +81,7 @@ function ldiv_fwd!(chol::SparseCholeskyPivoted{T}, B::AbstractMatrix{T}) where {
         end
     end
 
-    if !ispositive(chol.tol_dynamic)
-        div_impl!(B, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
-    else
-        div_piv_impl!(B, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
-    end
+    div_piv_impl!(B, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:N), Val(:N), F.L.uplo)
 
     return B
 end
@@ -107,11 +89,7 @@ end
 function ldiv_bwd!(chol::SparseCholeskyPivoted{T}, b::AbstractVector{T}) where {T}
     F = chol.F
 
-    if !ispositive(chol.tol_dynamic)
-        div_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:C), Val(:N), F.L.uplo)
-    else
-        div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:C), Val(:N), F.L.uplo)
-    end
+    div_piv_impl!(b, chol.Mptr, chol.Mval, chol.Fval, F.L, Val(:C), Val(:N), F.L.uplo)
 
     @inbounds for i in eachindex(b)
         chol.temp[F.perm[i]] = b[i]
