@@ -532,6 +532,120 @@ function pattern(C::SparseMatrixCSC{T, I}, A::SparseMatrixCSC{T, I}, uplo::Char)
     return sparse(rows, cols, ones(T, p), n, n)
 end
 
+function sympermutepacked_loop!(
+        work1::SparseMatrixCSC{T, I},
+        work2::SparseMatrixCSC{T, I},
+        A::SparseMatrixCSC{T, I},
+        invp::AbstractVector{I},
+        src::Char,
+        tgt::Char,
+        c::I,
+    ) where {T, I}
+    n = convert(I, isqrt(size(A, 1)))
+    m = zero(I)
+
+    @inbounds for p in nzrange(A, c)
+        i, j = cart(n, rowvals(A)[p])
+
+        src == 'L' && i < j && continue
+        src == 'U' && i > j && continue
+
+        pi = invp[i]
+        pj = invp[j]
+
+        if tgt == 'L'
+            lo, hi = minmax(pi, pj)
+        else
+            hi, lo = minmax(pi, pj)
+        end
+
+        if hi < n
+            work1.colptr[hi + two(I)] += one(I)
+        end
+
+        m += one(I)
+    end
+
+    @inbounds work1.colptr[one(I)] = q = one(I)
+
+    @inbounds for i in oneto(n)
+        q = work1.colptr[i + one(I)] += q
+    end
+
+    resize!(work1.rowval, m)
+    resize!(work2.rowval, m)
+
+    resize!(work1.nzval, m)
+    resize!(work2.nzval, m)
+
+    @inbounds for p in nzrange(A, c)
+        i, j = cart(n, rowvals(A)[p])
+
+        src == 'L' && i < j && continue
+        src == 'U' && i > j && continue
+
+        v = nonzeros(A)[p]
+        pi = invp[i]
+        pj = invp[j]
+
+        if tgt == 'L'
+            lo, hi = minmax(pi, pj)
+        else
+            hi, lo = minmax(pi, pj)
+        end
+
+        q = work1.colptr[hi + one(I)]
+
+        if (i > j) == (pi > pj)
+            work1.nzval[q] = conj(v)
+        else
+            work1.nzval[q] = v
+        end
+
+        work1.rowval[q         ] = lo
+        work1.colptr[hi + one(I)] = q + one(I)
+    end
+
+    adjoint!(work2, work1)
+    return
+end
+
+function sympermutepacked(
+        A::SparseMatrixCSC{T, I},
+        invp::AbstractVector{I},
+        src::Char,
+        tgt::Char,
+    ) where {T, I}
+    n = convert(I, isqrt(size(A, 1)))
+    m = convert(I, size(A, 2))
+    k = convert(I, nnz(A))
+
+    work1 = spzeros(T, I, n, n)
+    work2 = spzeros(T, I, n, n)
+
+    rowval = Vector{I}(undef, k)
+    nzval = Vector{T}(undef, k)
+    p = zero(I)
+
+    @inbounds for c in oneto(m)
+        sympermutepacked_loop!(work1, work2, A, invp, src, tgt, c)
+
+        for j in oneto(n)
+            for q in nzrange(work2, j)
+                i = rowvals(work2)[q]
+                v = nonzeros(work2)[q]
+
+                p += one(I); rowval[p] = flat(i, j, n) 
+                              nzval[p] = v
+            end
+        end
+    end
+
+    colptr = copy(A.colptr)
+    return SparseMatrixCSC{T, I}(n * n, m, colptr, rowval, nzval)
+end
+
+#=
 function sympermutepacked(
         A::SparseMatrixCSC{T, I},
         invp::AbstractVector,
@@ -612,6 +726,7 @@ function sympermutepacked(
     B = SparseMatrixCSC{T, I}(reverse(size(A))..., colptr, rowval, nzval)
     return copy(adjoint(B))
 end
+=#
 
 function permuteconstraints(A::SparseMatrixCSC{T, I}, threshold::Real) where {T, I}
     n = convert(I, isqrt(size(A, 1)))
