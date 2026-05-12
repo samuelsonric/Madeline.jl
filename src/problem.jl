@@ -262,21 +262,21 @@ function Problem(
         alg = DEFAULT_ELIMINATION_ALGORITHM,
         tol = SPARSITY_THRESHOLD,
     ) where {T}
-    G = pattern(C, A, uplo)
-    P, S = symbolic(G; alg)
+    @timeit TIMER "pattern" G = pattern(C, A, uplo)
+    @timeit TIMER "primal_symbolic" P, S = symbolic(G; alg)
 
-    Cp = sympermute(C, P.invp, uplo, 'L')
-    Gp = sympermute(G, P.invp, uplo, 'L')
-    Ap = sympermutepacked(A, P.invp, uplo, 'L')
+    @timeit TIMER "sympermute_C" Cp = sympermute(C, P.invp, uplo, 'L')
+    @timeit TIMER "sympermute_G" Gp = sympermute(G, P.invp, uplo, 'L')
+    @timeit TIMER "sympermute_A" Ap = sympermutepacked(A, P.invp, uplo, 'L')
 
-    Q, k = permuteconstraints(Ap, tol)
+    @timeit TIMER "permute_constraints" Q, k = permuteconstraints(Ap, tol)
     Ap = Ap / Q
     bp = FVector{T}(Q * b)
 
-    indices_primal = compute_indices_primal(S, Ap)
-    indices_slack = compute_indices_slack(Gp, Ap)
-    cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
-    idxfwd, idxbwd, idxptr, nrhs = touched(Ap, k, S, frnt_to_cc, ncc)
+    @timeit TIMER "indices_primal" indices_primal = compute_indices_primal(S, Ap)
+    @timeit TIMER "indices_slack" indices_slack = compute_indices_slack(Gp, Ap)
+    @timeit TIMER "constraint_graph" cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc = constraint_graph(S, Ap)
+    @timeit TIMER "touched" idxfwd, idxbwd, idxptr, nrhs = touched(Ap, k, S, frnt_to_cc, ncc)
 
     # Compute workspace sizes for OffsetArray optimization
     I = typeof(ncc)
@@ -303,11 +303,12 @@ function Problem(
         max_cons_per_cc = max(max_cons_per_cc, cons_count)
     end
 
-    schur_sparsity = T(linegraph_sparsity(cons_to_cc, cc_to_cons))
+    @timeit TIMER "linegraph_sparsity" schur_sparsity = T(linegraph_sparsity(cons_to_cc, cc_to_cons))
 
     # Compute dual (Schur complement) symbolic factorization if sparse
     if schur_sparsity > SPARSITY_THRESHOLD_SCHUR
-        dual_perm, dual_symb = symbolic(linegraph(cons_to_cc, cc_to_cons); alg)
+        @timeit TIMER "linegraph" LG = linegraph(cons_to_cc, cc_to_cons)
+        @timeit TIMER "dual_symbolic" dual_perm, dual_symb = symbolic(LG; alg)
     else
         dual_perm = nothing
         dual_symb = nothing
