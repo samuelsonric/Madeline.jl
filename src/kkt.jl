@@ -23,42 +23,19 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     ρ::T                             # ⟨u₀, c₀⟩
 end
 
-const SPARSITY_THRESHOLD_SCHUR = 0.25
+const SPARSITY_THRESHOLD_SCHUR = 0.75
 
 function constraint_graph(problem::Problem)
     return sparse(trilinegraph(problem.cons_to_cc, problem.cc_to_cons))
 end
 
-function constraint_graph_nnz(problem::Problem)
-    return trilinegraph_ne(problem.cons_to_cc, problem.cc_to_cons)
-end
-
-function trilinegraph_ne(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) where {I}
-    n = nv(ve)
-    m = zero(I)
-    marker = FVector{I}(undef, n)
-    fill!(marker, zero(I))
-
-    @inbounds for v in vertices(ve)
-        for w in neighbors(ve, v), x in neighbors(ev, w)
-            if x > v && marker[x] < v
-                marker[x] = v
-                m += one(I)
-            end
-        end
-    end
-
-    return m + n  # off-diagonal + diagonal
-end
 
 function makecholesky(problem::Problem{T, I}, settings::Settings{T}) where {T, I}
-    n = size(problem.A, 2)
-    m = constraint_graph_nnz(problem)
     sr = settings.del_static
     de = settings.tol_dynamic
     dd = settings.del_dynamic
 
-    if 2m + n < SPARSITY_THRESHOLD_SCHUR * n * n
+    if problem.schur_sparsity > SPARSITY_THRESHOLD_SCHUR
         if settings.pivot
             return SparseCholeskyPivoted{T, I}(constraint_graph(problem), problem.max_cons_per_cc, sr, de, dd)
         else

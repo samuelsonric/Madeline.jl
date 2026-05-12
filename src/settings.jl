@@ -22,6 +22,8 @@ function show_settings(io::IO, settings::Settings, indent::Int)
     pad = " "^indent
     @printf(io, "%sscaling:       %s\n", pad, settings.scaling ? "primal" : "dual")
     @printf(io, "%siter_limit:    %-7d     prox_bound:    %.2e\n", pad, settings.iter_limit, settings.prox_bound)
+    @printf(io, "%spivot:         %-7s     del_static:    %.2e\n", pad, settings.pivot, settings.del_static)
+    @printf(io, "%stol_dynamic:   %.1e     del_dynamic:   %.1e\n", pad, settings.tol_dynamic, settings.del_dynamic)
     @printf(io, "%stol_rel_opt:   %.1e     tol_abs_opt:   %.1e\n", pad, settings.tol_rel_opt, settings.tol_abs_opt)
     @printf(io, "%stol_feas:      %.1e     tol_infeas:    %.1e\n", pad, settings.tol_feas, settings.tol_infeas)
     @printf(io, "%stol_illposed:  %.1e     tol_slow:      %.1e", pad, settings.tol_illposed, settings.tol_slow)

@@ -267,6 +267,25 @@ struct Problem{T, I}
     max_rhs_per_cc::I
     max_cc_rows::I
     max_cons_per_cc::I
+    schur_sparsity::T
+end
+
+function trilinegraph_sparsity(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) where {I}
+    n = nv(ve)
+    m = zero(I)
+    marker = FVector{I}(undef, n)
+    fill!(marker, zero(I))
+
+    @inbounds for v in vertices(ve)
+        for w in neighbors(ve, v), x in neighbors(ev, w)
+            if x > v && marker[x] < v
+                marker[x] = v
+                m += one(I)
+            end
+        end
+    end
+
+    return 1 - (2m + n) / (n * n)
 end
 
 function Problem(
@@ -318,7 +337,9 @@ function Problem(
         max_cons_per_cc = max(max_cons_per_cc, cons_count)
     end
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc)
+    schur_sparsity = T(trilinegraph_sparsity(cons_to_cc, cc_to_cons))
+
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc, schur_sparsity)
 end
 
 function Problem(
@@ -358,6 +379,7 @@ function Base.copy(problem::Problem)
         problem.max_rhs_per_cc,
         problem.max_cc_rows,
         problem.max_cons_per_cc,
+        problem.schur_sparsity,
     )
 end
 
@@ -713,9 +735,12 @@ function show_problem(io::IO, problem::Problem, indent::Int)
     println(io)
     dimA = "$n × $n × $m"
     dimC = "$n × $n"
-    @printf(io, "%sdim(A): %-20s  nnz(A): %d\n", pad, dimA, nnz(problem.A))
-    @printf(io, "%sdim(C): %-20s  nnz(C): %d\n", pad, dimC, nnz(problem.C))
+    @printf(io, "%sdim(A): %-21s  nnz(A): %d\n", pad, dimA, nnz(problem.A))
+    @printf(io, "%sdim(C): %-21s  nnz(C): %d\n", pad, dimC, nnz(problem.C))
     println(io, pad, "dim(b): $m")
+    println(io)
+    println(io, pad, "schur complement:")
+    @printf(io, "%s  sparsity: %.1f%%\n", pad, 100 * problem.schur_sparsity)
     println(io)
     println(io, pad, "chordal decomposition:")
     println(io, pad, "  cones: ", ncones)
