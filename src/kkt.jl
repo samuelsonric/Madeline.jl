@@ -451,17 +451,17 @@ function refine_kkt!(
         x = q
     end
 
-    ρ = residual_kkt!(space, res, dir, rhs, problem, L, x, μ, scaling)
+    @timeit TIMER "ref_residual" ρ = residual_kkt!(space, res, dir, rhs, problem, L, x, μ, scaling)
     count = 0
 
     for _ in 1:MAX_REF_STEPS
         ρ ≤ min_res_norm && break
         2 ≤ count && break
 
-        solve_kkt!(space, cache, wrk, res, x, L, problem, μ, scaling)
+        @timeit TIMER "ref_solve" solve_kkt!(space, cache, wrk, res, x, L, problem, μ, scaling)
         axpy!(one(T), dir, wrk)
 
-        ε = residual_kkt!(space, res, wrk, rhs, problem, L, x, μ, scaling)
+        @timeit TIMER "ref_residual" ε = residual_kkt!(space, res, wrk, rhs, problem, L, x, μ, scaling)
 
         ε ≥ ρ && break
 

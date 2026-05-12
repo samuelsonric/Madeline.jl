@@ -339,7 +339,7 @@ function linesearch_combined!(
         scaling::Val{SCALE},
     ) where {UPLO, T, J, SCALE}
     n = ncl(L)
-    copyto!(wrk, itr)
+    @timeit TIMER "ls_copy" copyto!(wrk, itr)
 
     if SCALE
         p = itr.primal
@@ -352,17 +352,19 @@ function linesearch_combined!(
     for α in ALPHA_SCHED
         β = one(T) - α
 
-        copyto!(itr, wrk)
+        @timeit TIMER "ls_restore" copyto!(itr, wrk)
 
-        axpy!(α,     pd1, itr)
-        axpy!(β,     cd1, itr)
-        axpy!(α * α, pd2, itr)
-        axpy!(β * β, cd2, itr)
+        @timeit TIMER "ls_axpy" begin
+            axpy!(α,     pd1, itr)
+            axpy!(β,     cd1, itr)
+            axpy!(α * α, pd2, itr)
+            axpy!(β * β, cd2, itr)
+        end
 
         ispositive(p.τ) || continue
         ispositive(q.τ) || continue
 
-        μ = dot(p, q) / (n + 1)
+        @timeit TIMER "ls_dot" μ = dot(p, q) / (n + 1)
         ispositive(μ) || continue
 
         ρ = (p.τ * q.τ) / μ
@@ -370,23 +372,23 @@ function linesearch_combined!(
         ρ < one(T) - prox_bound && continue
         ρ > one(T) + prox_bound && continue
 
-        σ = symdot(p.X, q.X) / (μ * n)
+        @timeit TIMER "ls_symdot" σ = symdot(p.X, q.X) / (μ * n)
         σ < 0.01 && continue
         σ < one(T) - prox_bound / sqrt(n) && continue
         σ > one(T) + prox_bound / sqrt(n) && continue
 
-        factorize!(space, L, q, flip(scaling)) || continue
-        factorize!(space, L, p, scaling) || continue
+        @timeit TIMER "ls_factor" factorize!(space, L, q, flip(scaling)) || continue
+        @timeit TIMER "ls_factor" factorize!(space, L, p, scaling) || continue
 
-        gradient!(space, r, L, p, scaling)
-        prox = proximity!(space, res, itr, r, L, μ, scaling)
+        @timeit TIMER "ls_gradient" gradient!(space, r, L, p, scaling)
+        @timeit TIMER "ls_proximity" prox = proximity!(space, res, itr, r, L, μ, scaling)
 
         if prox <= prox_bound
             return CONTINUE, α, prox
         end
     end
 
-    copyto!(itr, wrk)
+    @timeit TIMER "ls_restore" copyto!(itr, wrk)
     return NUMERICAL_FAILURE, zero(T), zero(T)
 end
 
