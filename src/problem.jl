@@ -2,47 +2,6 @@
 
 const SPARSITY_THRESHOLD_SCHUR = 0.75
 
-function trilinegraph(ve::FBipartiteGraph{V, E}, ev::FBipartiteGraph{V, E}) where {V, E}
-    n = nv(ve)
-    m = zero(E)
-    marker = FVector{V}(undef, n)
-
-    @inbounds for v in vertices(ve)
-        marker[v] = zero(V)
-    end
-
-    @inbounds for v in vertices(ve)
-        tag = v
-
-        for w in neighbors(ve, v), x in neighbors(ev, w)
-            if x > v && marker[x] < tag
-                marker[x] = tag
-                m += one(E)
-            end
-        end
-    end
-
-    target = FVector{E}(undef, m)
-    pointer = FVector{V}(undef, n + one(V))
-    @inbounds pointer[one(V)] = p = one(E)
-
-    @inbounds for v in vertices(ve)
-        tag = n + v
-
-        for w in neighbors(ve, v), x in neighbors(ev, w)
-            if x > v && marker[x] < tag
-                marker[x] = tag
-                target[p] = x
-                p += one(E)
-            end
-        end
-
-        pointer[v + one(V)] = p
-    end
-
-    return FBipartiteGraph{V, E}(n, n, m, pointer, target)
-end
-
 # Count connected components (trees) in the elimination forest.
 function count_connected_components(S::ChordalSymbolic{I}) where {I}
     ncc = zero(I)
@@ -278,7 +237,7 @@ end
 const DenseProblem{T, I} = Problem{T, I, Nothing, Nothing}
 const SparseProblem{T, I} = Problem{T, I, FPermutation{I}, ChordalSymbolic{I}}
 
-function trilinegraph_sparsity(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) where {I}
+function linegraph_sparsity(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) where {I}
     n = nv(ve)
     m = zero(I)
     marker = FVector{I}(undef, n)
@@ -345,12 +304,11 @@ function Problem(
         max_cons_per_cc = max(max_cons_per_cc, cons_count)
     end
 
-    schur_sparsity = T(trilinegraph_sparsity(cons_to_cc, cc_to_cons))
+    schur_sparsity = T(linegraph_sparsity(cons_to_cc, cc_to_cons))
 
     # Compute dual (Schur complement) symbolic factorization if sparse
     if schur_sparsity > SPARSITY_THRESHOLD_SCHUR
-        schur_pattern = sparse(trilinegraph(cons_to_cc, cc_to_cons))
-        dual_perm, dual_symb = symbolic(schur_pattern; alg)
+        dual_perm, dual_symb = symbolic(linegraph(cons_to_cc, cc_to_cons); alg)
     else
         dual_perm = nothing
         dual_symb = nothing

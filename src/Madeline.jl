@@ -12,7 +12,7 @@ using Printf
 using Base: @propagate_inbounds
 using CommonSolve: CommonSolve, init, solve, solve!, step!
 
-using CliqueTrees: FBipartiteGraph, pointers, targets, neighbors, nv, ne, etype, vertices, nov
+using CliqueTrees: FBipartiteGraph, pointers, targets, neighbors, nv, ne, etype, vertices, nov, linegraph
 using CliqueTrees.Multifrontal
 using CliqueTrees.Multifrontal: HermOrSym, HermOrSymTri, HermOrSymSparse, HermTri, ChordalTriangular, FChordalTriangular, FChordalCholesky, Permutation
 using CliqueTrees.Multifrontal: FVector, FScalar, FMatrix, FPermutation, ChordalSymbolic

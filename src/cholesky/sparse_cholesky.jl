@@ -12,23 +12,6 @@ struct SparseCholesky{T, I} <: AbstractCholesky{T}
     del_dynamic::T
 end
 
-# Constructor from sparsity pattern (computes symbolic internally)
-function SparseCholesky{T, I}(pattern::SparseMatrixCSC, k::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T, I}
-    F = FChordalCholesky{:L, T, I}(pattern)
-    n = size(F, 1)
-
-    W = FMatrix{T}(undef, k, k)
-    prm = FVector{I}(undef, k)
-    ivp = FVector{I}(undef, k)
-    Mptr = FVector{I}(undef, F.L.S.nMptr)
-    Mval = FVector{T}(undef, max(F.L.S.nMval, F.L.S.nNval * 2))
-    Fval = FVector{T}(undef, max(F.L.S.nFval * F.L.S.nFval, F.L.S.nFval * 2))
-    temp = FVector{T}(undef, n)
-
-    return SparseCholesky(F, W, prm, ivp, Mptr, Mval, Fval, temp, del_static, tol_dynamic, del_dynamic)
-end
-
-# Constructor from precomputed permutation and symbolic
 function SparseCholesky{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T, I}
     F = FChordalCholesky{:L, T}(P, S)
     n = size(F, 1)

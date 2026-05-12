@@ -15,27 +15,6 @@ struct SparseCholeskyPivoted{T, I} <: AbstractCholesky{T}
     del_dynamic::T
 end
 
-# Constructor from sparsity pattern (computes symbolic internally)
-function SparseCholeskyPivoted{T, I}(pattern::SparseMatrixCSC, k::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T, I}
-    F = FChordalCholesky{:L, T, I}(pattern)
-    n = size(F, 1)
-    L = F.L
-
-    W = FMatrix{T}(undef, k, k)
-    prm = FVector{I}(undef, k)
-    ivp = FVector{I}(undef, k)
-    Mptr = FVector{I}(undef, L.S.nMptr)
-    Mval = FVector{T}(undef, max(L.S.nMval, L.S.nNval * 2))
-    Fval = FVector{T}(undef, max(L.S.nFval * L.S.nFval, L.S.nFval * 2))
-    temp = FVector{T}(undef, n)
-    piv = FVector{BlasInt}(undef, L.S.nFval)
-    mval = FVector{I}(undef, L.S.nNval)
-    fval = FVector{I}(undef, L.S.nFval)
-
-    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval, del_static, tol_dynamic, del_dynamic)
-end
-
-# Constructor from precomputed permutation and symbolic
 function SparseCholeskyPivoted{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer, del_static::T, tol_dynamic::T, del_dynamic::T) where {T, I}
     F = FChordalCholesky{:L, T}(P, S)
     n = size(F, 1)

@@ -23,11 +23,6 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     ρ::T                             # ⟨u₀, c₀⟩
 end
 
-function constraint_graph(problem::Problem)
-    return sparse(trilinegraph(problem.cons_to_cc, problem.cc_to_cons))
-end
-
-
 function makecholesky(problem::SparseProblem{T, I}, settings::Settings{T}) where {T, I}
     sr = settings.del_static
     de = settings.tol_dynamic
