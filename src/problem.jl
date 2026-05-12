@@ -533,8 +533,7 @@ function pattern(C::SparseMatrixCSC{T, I}, A::SparseMatrixCSC{T, I}, uplo::Char)
 end
 
 function sympermutepacked_loop!(
-        work1::SparseMatrixCSC{T, I},
-        work2::SparseMatrixCSC{T, I},
+        work::AbstractVector{Tuple{I, T}},
         A::SparseMatrixCSC{T, I},
         invp::AbstractVector{I},
         src::Char,
@@ -542,43 +541,7 @@ function sympermutepacked_loop!(
         c::I,
     ) where {T, I}
     n = convert(I, isqrt(size(A, 1)))
-    m = zero(I)
-
-    fill!(work1.colptr, zero(I))
-
-    @inbounds for p in nzrange(A, c)
-        i, j = cart(n, rowvals(A)[p])
-
-        src == 'L' && i < j && continue
-        src == 'U' && i > j && continue
-
-        pi = invp[i]
-        pj = invp[j]
-
-        if tgt == 'L'
-            lo, hi = minmax(pi, pj)
-        else
-            hi, lo = minmax(pi, pj)
-        end
-
-        if hi < n
-            work1.colptr[hi + two(I)] += one(I)
-        end
-
-        m += one(I)
-    end
-
-    @inbounds work1.colptr[one(I)] = q = one(I)
-
-    @inbounds for i in oneto(n)
-        q = work1.colptr[i + one(I)] += q
-    end
-
-    resize!(work1.rowval, m)
-    resize!(work2.rowval, m)
-
-    resize!(work1.nzval, m)
-    resize!(work2.nzval, m)
+    empty!(work)
 
     @inbounds for p in nzrange(A, c)
         i, j = cart(n, rowvals(A)[p])
@@ -591,24 +554,17 @@ function sympermutepacked_loop!(
         pj = invp[j]
 
         if tgt == 'L'
-            lo, hi = minmax(pi, pj)
+            pj, pi = minmax(pi, pj)
         else
-            hi, lo = minmax(pi, pj)
+            pi, pj = minmax(pi, pj)
         end
 
-        q = work1.colptr[hi + one(I)]
+        pp = flat(pi, pj, n)
 
-        if (i > j) == (pi > pj)
-            work1.nzval[q] = conj(v)
-        else
-            work1.nzval[q] = v
-        end
-
-        work1.rowval[q         ] = lo
-        work1.colptr[hi + one(I)] = q + one(I)
+        push!(work, (pp, v))
     end
 
-    adjoint!(work2, work1)
+    sort!(work; by=first, alg=QuickSort)
     return
 end
 
@@ -622,26 +578,20 @@ function sympermutepacked(
     m = convert(I, size(A, 2))
     k = convert(I, nnz(A))
 
-    work1 = spzeros(T, I, n, n)
-    work2 = spzeros(T, I, n, n)
-
+    work = Tuple{I, T}[]
     colptr = Vector{I}(undef, m + one(I))
     rowval = Vector{I}(undef, k)
     nzval = Vector{T}(undef, k)
+
     p = zero(I)
 
     @inbounds for c in oneto(m)
         colptr[c] = p + one(I)
-        sympermutepacked_loop!(work1, work2, A, invp, src, tgt, c)
+        sympermutepacked_loop!(work, A, invp, src, tgt, c)
 
-        for j in oneto(n)
-            for q in nzrange(work2, j)
-                i = rowvals(work2)[q]
-                v = nonzeros(work2)[q]
-
-                p += one(I); rowval[p] = flat(i, j, n) 
-                              nzval[p] = v
-            end
+        for (i, v) in work
+            p += one(I); rowval[p] = i
+                          nzval[p] = v
         end
     end
 
