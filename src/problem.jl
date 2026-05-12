@@ -382,7 +382,7 @@ function compute_indices_primal(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I})
     m = convert(I, ndz(S))
     P = FVector{I}(undef, nnz(A))
 
-    local f, res, sep, nn, na, rlo, slo, shi, Dp, Lp
+    local f, res, sep, nn, na, rlo, slo, shi, Dp, Lp, sloc
 
     @inbounds for c in axes(A, 2)
         jprv = rhi = zero(I)
@@ -412,11 +412,11 @@ function compute_indices_primal(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I})
             end
     
             rloc = i - rlo
+            jloc = j - rlo
 
             if jprv < j
                 jprv = j
                 sloc = one(I)
-                jloc = j - rlo
             end
 
             if rlo ≤ i ≤ rhi
