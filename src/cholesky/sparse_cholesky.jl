@@ -81,19 +81,10 @@ end
 function add_clique_impl!(L::FChordalTriangular{:N, :L, T, I}, W::AbstractMatrix{T}, ind::AbstractVector{I}) where {T, I}
     n = convert(I, length(ind))
 
+    local f, D, B, res, sep, rlo, slo, shi
+
     if ispositive(n)
-        f = L.S.idx[ind[1]]
-
-        D, res = diagblock(L, f)
-        B, sep = offdblock(L, f)
-
-        rlo = first(res)
-        rhi = last(res)
-
-        if !isempty(sep)
-            slo = first(sep)
-            shi = last(sep)
-        end
+        rhi = zero(I)
 
         for k in oneto(n)
             v = ind[k]

@@ -382,61 +382,54 @@ function compute_indices_primal(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I})
     m = convert(I, ndz(S))
     P = FVector{I}(undef, nnz(A))
 
+    local f, res, sep, nn, na, rlo, slo, shi, Dp, Lp
+
     @inbounds for c in axes(A, 2)
-        plo = A.colptr[c]
-        phi = A.colptr[c + 1] - one(I)
+        jprv = rhi = zero(I)
 
-        for f in fronts(S)
-            res = neighbors(S.res, f)
-            sep = neighbors(S.sep, f)
+        for p in nzrange(A, c)
+            i, j = cart(n, rowvals(A)[p])
 
-            nn = eltypedegree(S.res, f)
-            na = eltypedegree(S.sep, f)
+            if rhi < j
+                f = S.idx[j]
 
-            rlo = first(res)
-            rhi = last(res)
+                res = neighbors(S.res, f)
+                sep = neighbors(S.sep, f)
 
-            if ispositive(na)
-                slo = first(sep)
-                shi = last(sep)
-            end
+                nn = eltypedegree(S.res, f)
+                na = eltypedegree(S.sep, f)
 
-            jprv = zero(I)
-            sloc = one(I)
+                rlo = first(res)
+                rhi = last(res)
 
-            doff = S.Dptr[f] - one(I)
-            loff = S.Lptr[f] - one(I)
-
-            while plo ≤ phi
-                i, j = cart(n, rowvals(A)[plo])
-                j > rhi && break
-
-                if j ≥ rlo
-                    if j > jprv
-                        jprv = j
-
-                        sloc = one(I)
-                        jloc = j - rlo
-
-                        doff = S.Dptr[f] + jloc * nn
-                        loff = S.Lptr[f] + jloc * na
-                    end
-
-                    if rlo ≤ i ≤ rhi
-                        P[plo] = i - rlo + doff
-                    elseif ispositive(na) && slo ≤ i ≤ shi
-                        while sloc <= na && sep[sloc] < i
-                            sloc += one(I)
-                        end
-
-                        if sloc <= na && sep[sloc] == i
-                            P[plo] = sloc + loff + m - one(I)
-                        end
-                    end
+                if ispositive(na)
+                    slo = first(sep)
+                    shi = last(sep)
                 end
 
-                plo += one(I)
+                Dp = S.Dptr[f]
+                Lp = S.Lptr[f]
             end
+    
+            rloc = i - rlo
+
+            if jprv < j
+                jprv = j
+                sloc = one(I)
+                jloc = j - rlo
+            end
+
+            if rlo ≤ i ≤ rhi
+                P[p] = rloc + Dp + jloc * nn
+            elseif ispositive(na) && slo ≤ i ≤ shi
+                while sloc <= na && sep[sloc] < i
+                    sloc += one(I)
+                end
+
+                if sloc <= na && sep[sloc] == i
+                    P[p] = sloc + Lp + jloc * na + m - one(I)
+                end
+            end            
         end
     end
 
@@ -600,89 +593,6 @@ function sympermutepacked(
     resize!(nzval, p)
     return SparseMatrixCSC{T, I}(n * n, m, colptr, rowval, nzval)
 end
-
-#=
-function sympermutepacked(
-        A::SparseMatrixCSC{T, I},
-        invp::AbstractVector,
-        src::Char,
-        tgt::Char,
-    ) where {T, I}
-    n = convert(I, isqrt(size(A, 1)))
-    m = zero(I)
-
-    colptr = zeros(I, n * n + 1)
-
-    @inbounds for c in axes(A, 2)
-        for p in nzrange(A, c)
-            i, j = cart(n, rowvals(A)[p])
-
-            src == 'L' && i < j && continue
-            src == 'U' && i > j && continue
-
-            pi = invp[i]
-            pj = invp[j]
-
-            if tgt == 'L'
-                lo, hi = minmax(pi, pj)
-            else
-                hi, lo = minmax(pi, pj)
-            end
-
-            f = flat(hi, lo, n)
-
-            if f < n * n
-                colptr[f + two(I)] += one(I)
-            end
-
-            m += one(I)
-        end
-    end
-
-    rowval = Vector{I}(undef, m)
-    nzval = Vector{T}(undef, m)
-
-    colptr[1] = m = one(I)
-
-    @inbounds for f in axes(A, 1)
-        colptr[f + 1] = m += colptr[f + 1]
-    end
-
-    @inbounds for c in axes(A, 2)
-        for p in nzrange(A, c)
-            i, j = cart(n, rowvals(A)[p])
-
-            src == 'L' && i < j && continue
-            src == 'U' && i > j && continue
-
-            v = nonzeros(A)[p]
-            pi = invp[i]
-            pj = invp[j]
-
-            if tgt == 'L'
-                lo, hi = minmax(pi, pj)
-            else
-                hi, lo = minmax(pi, pj)
-            end
-
-            f = flat(hi, lo, n)
-            q = colptr[f + 1]
-            rowval[q] = c
-
-            if (i > j) == (pi > pj)
-                nzval[q] = conj(v)
-            else
-                nzval[q] = v
-            end
-
-            colptr[f + 1] = q + one(I)
-        end
-    end
-
-    B = SparseMatrixCSC{T, I}(reverse(size(A))..., colptr, rowval, nzval)
-    return copy(adjoint(B))
-end
-=#
 
 function permuteconstraints(A::SparseMatrixCSC{T, I}, threshold::Real) where {T, I}
     n = convert(I, isqrt(size(A, 1)))
