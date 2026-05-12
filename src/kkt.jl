@@ -24,26 +24,24 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
 end
 
 function makecholesky(problem::SparseProblem{T, I}, settings::Settings{T}) where {T, I}
-    shift = settings.shift
     k = problem.max_cons_per_cc
     P = problem.dual_perm
     S = problem.dual_symb
 
     if settings.pivot
-        return SparseCholeskyPivoted{T, I}(P, S, k, shift)
+        return SparseCholeskyPivoted{T, I}(P, S, k)
     else
-        return SparseCholesky{T, I}(P, S, k, shift)
+        return SparseCholesky{T, I}(P, S, k)
     end
 end
 
 function makecholesky(problem::DenseProblem{T, I}, settings::Settings{T}) where {T, I}
-    shift = settings.shift
     m = size(problem.A, 2)
 
     if settings.pivot
-        return DenseCholeskyPivoted{T}(m, shift)
+        return DenseCholeskyPivoted{T}(m)
     else
-        return DenseCholesky{T}(m, shift)
+        return DenseCholesky{T}(m)
     end
 end
 
@@ -214,12 +212,13 @@ function build_schur!(
         w::Primal{UPLO, T, J},
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
+        shift::T,
     ) where {UPLO, T, J}
     k = problem.k
     chol = cache.chol
     cc_to_cons = problem.cc_to_cons
 
-    setzero!(chol)
+    setzero!(chol, shift)
 
     @timeit TIMER "schur" for cc in oneto(problem.ncc)
         fdsc = problem.frtptr[cc]
@@ -276,6 +275,7 @@ function build_kkt!(
         L::ChordalTriangular{:N, UPLO, T, J},
         problem::Problem{T, J},
         μ::T,
+        shift::T,
         ::Val{SCALE},
     ) where {UPLO, T, J, SCALE}
     if SCALE
@@ -284,7 +284,7 @@ function build_kkt!(
         σ = inv(μ)
     end
 
-    success = build_schur!(space, cache, x, w, L, problem)
+    success = build_schur!(space, cache, x, w, L, problem, shift)
     success || return false
 
     w.τ = one(T)

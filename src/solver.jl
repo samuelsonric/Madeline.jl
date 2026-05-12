@@ -522,7 +522,7 @@ function solve_loop!(
 
     if flag
         @timeit TIMER "gradient" gradient!(space, q, L, p, scaling)
-        @timeit TIMER "build_kkt" flag = build_kkt!(space, cache, x, res.primal, L, problem, state.μ, scaling)
+        @timeit TIMER "build_kkt" flag = build_kkt!(space, cache, x, res.primal, L, problem, state.μ, settings.shift, scaling)
     end
 
     if flag

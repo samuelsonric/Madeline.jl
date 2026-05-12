@@ -1,13 +1,12 @@
 struct DenseCholesky{T} <: AbstractCholesky{T}
     L::FMatrix{T}
     temp::FVector{T}
-    shift::T
 end
 
-function DenseCholesky{T}(m::Integer, shift::T) where {T}
+function DenseCholesky{T}(m::Integer) where {T}
     L = FMatrix{T}(undef, m, m)
     temp = FVector{T}(undef, m)
-    return DenseCholesky(L, temp, shift)
+    return DenseCholesky(L, temp)
 end
 
 function factorize!(chol::DenseCholesky{T}) where {T}
@@ -15,11 +14,11 @@ function factorize!(chol::DenseCholesky{T}) where {T}
     return iszero(info)
 end
 
-function setzero!(chol::DenseCholesky{T}) where {T}
+function setzero!(chol::DenseCholesky{T}, shift::T) where {T}
     fill!(chol.L, zero(T))
 
     @inbounds for i in diagind(chol.L)
-        chol.L[i] = chol.shift
+        chol.L[i] = shift
     end
 
     return chol

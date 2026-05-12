@@ -10,10 +10,9 @@ struct SparseCholeskyPivoted{T, I} <: AbstractCholesky{T}
     piv::FVector{BlasInt} # workspace for pivots
     mval::FVector{I}      # workspace for pivoting
     fval::FVector{I}      # workspace for pivoting
-    shift::T
 end
 
-function SparseCholeskyPivoted{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer, shift::T) where {T, I}
+function SparseCholeskyPivoted{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer) where {T, I}
     F = FChordalCholesky{:L, T}(P, S)
     n = size(F, 1)
 
@@ -28,11 +27,11 @@ function SparseCholeskyPivoted{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, 
     mval = FVector{I}(undef, S.nNval)
     fval = FVector{I}(undef, S.nFval)
 
-    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval, shift)
+    return SparseCholeskyPivoted(F, W, prm, ivp, Mptr, Mval, Fval, temp, piv, mval, fval)
 end
 
-function setzero!(chol::SparseCholeskyPivoted{T}) where {T}
-    axpby!(chol.shift, I, zero(T), chol.F.L)
+function setzero!(chol::SparseCholeskyPivoted{T}, shift::T) where {T}
+    axpby!(shift, I, zero(T), chol.F.L)
     return chol
 end
 

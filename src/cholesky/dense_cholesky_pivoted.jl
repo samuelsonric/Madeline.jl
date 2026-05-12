@@ -4,15 +4,14 @@ mutable struct DenseCholeskyPivoted{T} <: AbstractCholesky{T}
     const work::FVector{T}
     const temp::FVector{T}
     rank::Int
-    const shift::T
 end
 
-function DenseCholeskyPivoted{T}(m::Integer, shift::T) where {T}
+function DenseCholeskyPivoted{T}(m::Integer) where {T}
     L = FMatrix{T}(undef, m, m)
     perm = FVector{BlasInt}(undef, m)
     work = FVector{T}(undef, 2m)
     temp = FVector{T}(undef, m)
-    return DenseCholeskyPivoted(L, perm, work, temp, 0, shift)
+    return DenseCholeskyPivoted(L, perm, work, temp, 0)
 end
 
 function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
@@ -20,11 +19,11 @@ function factorize!(chol::DenseCholeskyPivoted{T}) where {T}
     return true
 end
 
-function setzero!(chol::DenseCholeskyPivoted{T}) where {T}
+function setzero!(chol::DenseCholeskyPivoted{T}, shift::T) where {T}
     fill!(chol.L, zero(T))
 
     @inbounds for i in diagind(chol.L)
-        chol.L[i] = chol.shift
+        chol.L[i] = shift
     end
 
     return chol

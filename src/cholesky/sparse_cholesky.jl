@@ -7,10 +7,9 @@ struct SparseCholesky{T, I} <: AbstractCholesky{T}
     Mval::FVector{T}      # workspace for ldiv
     Fval::FVector{T}      # workspace for ldiv
     temp::FVector{T}      # workspace for permuted rhs
-    shift::T
 end
 
-function SparseCholesky{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer, shift::T) where {T, I}
+function SparseCholesky{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Integer) where {T, I}
     F = FChordalCholesky{:L, T}(P, S)
     n = size(F, 1)
 
@@ -22,11 +21,11 @@ function SparseCholesky{T, I}(P::FPermutation{I}, S::ChordalSymbolic{I}, k::Inte
     Fval = FVector{T}(undef, max(S.nFval * S.nFval, S.nFval * 2))
     temp = FVector{T}(undef, n)
 
-    return SparseCholesky(F, W, prm, ivp, Mptr, Mval, Fval, temp, shift)
+    return SparseCholesky(F, W, prm, ivp, Mptr, Mval, Fval, temp)
 end
 
-function setzero!(chol::SparseCholesky{T}) where {T}
-    axpby!(chol.shift, I, zero(T), chol.F.L)
+function setzero!(chol::SparseCholesky{T}, shift::T) where {T}
+    axpby!(shift, I, zero(T), chol.F.L)
     return chol
 end
 
