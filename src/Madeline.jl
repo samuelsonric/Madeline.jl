@@ -14,7 +14,7 @@ using CommonSolve: CommonSolve, init, solve, solve!, step!
 
 using CliqueTrees: FBipartiteGraph, pointers, targets, neighbors, nv, ne, etype, vertices, nov
 using CliqueTrees.Multifrontal
-using CliqueTrees.Multifrontal: HermOrSym, HermOrSymTri, HermOrSymSparse, HermTri, ChordalTriangular, FChordalTriangular, Permutation
+using CliqueTrees.Multifrontal: HermOrSym, HermOrSymTri, HermOrSymSparse, HermTri, ChordalTriangular, FChordalTriangular, FChordalCholesky, Permutation
 using CliqueTrees.Multifrontal: FVector, FScalar, FMatrix, FPermutation, ChordalSymbolic
 using CliqueTrees.Multifrontal: cholesky!, complete!, complete_dense!, uncholesky!, copyto!, similar, selaxpby!
 using CliqueTrees.Multifrontal: fisher_impl!, fisherroot_impl!, complete_impl!, chol_impl!, chol_piv_impl!, unchol_impl!, selinv_impl!, div_impl!, div_piv_impl!, mt_div_impl!, amari!, amari_impl!, DynamicRegularization
@@ -67,7 +67,7 @@ include("result.jl")
 include("equilibration/equilibration.jl")
 include("MOI_wrapper.jl")
 
-export Solver, Problem, Settings, Optimizer
+export Solver, Problem, DenseProblem, SparseProblem, Settings, Optimizer
 export init, solve, solve!, step!
 export equilibrate!, deequilibrate!
 export Status

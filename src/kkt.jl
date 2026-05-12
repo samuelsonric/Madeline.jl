@@ -23,30 +23,36 @@ mutable struct KKT{T, Chol <: AbstractCholesky{T}}
     ρ::T                             # ⟨u₀, c₀⟩
 end
 
-const SPARSITY_THRESHOLD_SCHUR = 0.75
-
 function constraint_graph(problem::Problem)
     return sparse(trilinegraph(problem.cons_to_cc, problem.cc_to_cons))
 end
 
 
-function makecholesky(problem::Problem{T, I}, settings::Settings{T}) where {T, I}
+function makecholesky(problem::SparseProblem{T, I}, settings::Settings{T}) where {T, I}
     sr = settings.del_static
     de = settings.tol_dynamic
     dd = settings.del_dynamic
+    k = problem.max_cons_per_cc
+    P = problem.dual_perm
+    S = problem.dual_symb
 
-    if problem.schur_sparsity > SPARSITY_THRESHOLD_SCHUR
-        if settings.pivot
-            return SparseCholeskyPivoted{T, I}(constraint_graph(problem), problem.max_cons_per_cc, sr, de, dd)
-        else
-            return SparseCholesky{T, I}(constraint_graph(problem), problem.max_cons_per_cc, sr, de, dd)
-        end
+    if settings.pivot
+        return SparseCholeskyPivoted{T, I}(P, S, k, sr, de, dd)
     else
-        if settings.pivot
-            return DenseCholeskyPivoted{T}(n, sr, de, dd)
-        else
-            return DenseCholesky{T}(n, sr, de, dd)
-        end
+        return SparseCholesky{T, I}(P, S, k, sr, de, dd)
+    end
+end
+
+function makecholesky(problem::DenseProblem{T, I}, settings::Settings{T}) where {T, I}
+    sr = settings.del_static
+    de = settings.tol_dynamic
+    dd = settings.del_dynamic
+    m = size(problem.A, 2)
+
+    if settings.pivot
+        return DenseCholeskyPivoted{T}(m, sr, de, dd)
+    else
+        return DenseCholesky{T}(m, sr, de, dd)
     end
 end
 

@@ -560,11 +560,11 @@ end
 
 # ===== CommonSolve Interface =====
 
-function CommonSolve.init(::Type{Solver}, problem::Problem{T}; settings::Settings{T}=Settings{T}()) where {T}
+function CommonSolve.init(::Type{Solver}, problem::Problem{T, J}; settings::Settings{T}=Settings{T}()) where {T, J}
     return Solver(problem, settings)
 end
 
-function CommonSolve.solve(problem::Problem{T}; settings::Settings{T}=Settings{T}()) where {T}
+function CommonSolve.solve(problem::Problem{T, J}; settings::Settings{T}=Settings{T}()) where {T, J}
     solver = Solver(problem, settings)
     return solve!(solver; settings)
 end

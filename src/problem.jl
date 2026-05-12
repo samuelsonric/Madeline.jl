@@ -1,5 +1,7 @@
 # ===== Problem data type =====
 
+const SPARSITY_THRESHOLD_SCHUR = 0.75
+
 function trilinegraph(ve::FBipartiteGraph{V, E}, ev::FBipartiteGraph{V, E}) where {V, E}
     n = nv(ve)
     m = zero(E)
@@ -241,7 +243,7 @@ function constraint_graph(S::ChordalSymbolic{I}, A::SparseMatrixCSC{T, I}) where
     return cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc
 end
 
-struct Problem{T, I}
+struct Problem{T, I, DualPerm, DualSymb}
     G::SparseMatrixCSC{T, I}
     C::SparseMatrixCSC{T, I}
     A::SparseMatrixCSC{T, I}
@@ -268,7 +270,13 @@ struct Problem{T, I}
     max_cc_rows::I
     max_cons_per_cc::I
     schur_sparsity::T
+    # Dual (Schur complement) symbolic factorization
+    dual_perm::DualPerm
+    dual_symb::DualSymb
 end
+
+const DenseProblem{T, I} = Problem{T, I, Nothing, Nothing}
+const SparseProblem{T, I} = Problem{T, I, FPermutation{I}, ChordalSymbolic{I}}
 
 function trilinegraph_sparsity(ve::FBipartiteGraph{I, I}, ev::FBipartiteGraph{I, I}) where {I}
     n = nv(ve)
@@ -339,7 +347,16 @@ function Problem(
 
     schur_sparsity = T(trilinegraph_sparsity(cons_to_cc, cc_to_cons))
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc, schur_sparsity)
+    # Compute dual (Schur complement) symbolic factorization if sparse
+    if schur_sparsity > SPARSITY_THRESHOLD_SCHUR
+        schur_pattern = sparse(trilinegraph(cons_to_cc, cc_to_cons))
+        dual_perm, dual_symb = symbolic(schur_pattern; alg)
+    else
+        dual_perm = nothing
+        dual_symb = nothing
+    end
+
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc, schur_sparsity, dual_perm, dual_symb)
 end
 
 function Problem(
@@ -380,6 +397,8 @@ function Base.copy(problem::Problem)
         problem.max_cc_rows,
         problem.max_cons_per_cc,
         problem.schur_sparsity,
+        problem.dual_perm,
+        problem.dual_symb,
     )
 end
 

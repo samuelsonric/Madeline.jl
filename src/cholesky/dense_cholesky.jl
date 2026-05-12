@@ -26,7 +26,12 @@ function factorize!(chol::DenseCholesky{T}) where {T}
 end
 
 function setzero!(chol::DenseCholesky{T}) where {T}
-    axpby!(chol.del_static, I, zero(T), chol.L)
+    fill!(chol.L, zero(T))
+
+    @inbounds for i in diagind(chol.L)
+        chol.L[i] = chol.del_static
+    end
+
     return chol
 end
 
