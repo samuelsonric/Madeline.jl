@@ -440,29 +440,25 @@ function compute_indices_slack(G::SparseMatrixCSC{T, I}, A::SparseMatrixCSC{T, I
     n = convert(I, size(G, 1))
     P = FVector{I}(undef, nnz(A))
 
+    local q, qhi
+
     @inbounds for c in axes(A, 2)
-        plo = A.colptr[c]
-        phi = A.colptr[c + 1] - one(I)
+        jprv = zero(I)
 
-        for k in axes(G, 2)
-            qlo = G.colptr[k]
-            qhi = G.colptr[k + 1] - one(I)
-            q = qlo
+        for p in nzrange(A, c)
+            i, j = cart(n, rowvals(A)[p])
 
-            while plo ≤ phi
-                i, j = cart(n, rowvals(A)[plo])
-                j > k && break
-
-                if j ≥ k
-                    while q ≤ qhi && rowvals(G)[q] < i
-                        q += one(I)
-                    end
-
-                    P[plo] = q
-                end
-
-                plo += one(I)
+            if jprv < j
+                jprv = j
+                q = G.colptr[j]
+                qhi = G.colptr[j + one(I)] - one(I)
             end
+
+            while q ≤ qhi && rowvals(G)[q] < i
+                q += one(I)
+            end
+
+            P[p] = q
         end
     end
 
