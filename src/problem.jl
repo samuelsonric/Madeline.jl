@@ -228,7 +228,6 @@ struct Problem{T, I, DualPerm, DualSymb}
     max_rhs_per_cc::I
     max_cc_rows::I
     max_cons_per_cc::I
-    schur_sparsity::T
     # Dual (Schur complement) symbolic factorization
     dual_perm::DualPerm
     dual_symb::DualSymb
@@ -314,7 +313,7 @@ function Problem(
         dual_symb = nothing
     end
 
-    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc, schur_sparsity, dual_perm, dual_symb)
+    return Problem(Gp, Cp, Ap, bp, P, Q, k, S, indices_primal, indices_slack, cons_to_cc, cc_to_cons, cc_to_strt, cc_to_stop, frnt_to_cc, frtptr, ncc, idxfwd, idxbwd, idxptr, nrhs, max_rhs_per_cc, max_cc_rows, max_cons_per_cc, dual_perm, dual_symb)
 end
 
 function Problem(
@@ -354,7 +353,6 @@ function Base.copy(problem::Problem)
         problem.max_rhs_per_cc,
         problem.max_cc_rows,
         problem.max_cons_per_cc,
-        problem.schur_sparsity,
         problem.dual_perm,
         problem.dual_symb,
     )
@@ -716,8 +714,8 @@ function show_problem(io::IO, problem::Problem, indent::Int)
     @printf(io, "%sdim(C): %-21s  nnz(C): %d\n", pad, dimC, nnz(problem.C))
     println(io, pad, "dim(b): $m")
     println(io)
-    println(io, pad, "schur complement:")
-    @printf(io, "%s  sparsity: %.1f%%\n", pad, 100 * problem.schur_sparsity)
+    schur_type = problem isa DenseProblem ? "dense" : "sparse"
+    println(io, pad, "schur complement: ", schur_type)
     println(io)
     println(io, pad, "chordal decomposition:")
     println(io, pad, "  cones: ", ncones)
