@@ -135,7 +135,7 @@ function schur_column_dense!(
     jloc = kj - klo + one(J)
     cache.W[jloc, jloc] = dotpacked(Wchol, A, indices, pjstrt:pjstop)
 
-    for ki in kj + one(J):khi
+    @inbounds for ki in kj + one(J):khi
         pistrt = targets(cc_to_strt)[ki]
         pistop = targets(cc_to_stop)[ki]
         iloc = ki - klo + one(J)
@@ -159,7 +159,7 @@ function schur_column_sparse!(
     jloc = kj - klo + one(J)
     cache.W[jloc, jloc] = schur_entry_sparse(cache.V, problem.A, problem.idxbwd, srange, pjstrt:pjstop, pjstrt:pjstop)
 
-    for ki in kj + one(J):khi
+    @inbounds for ki in kj + one(J):khi
         pistrt = targets(problem.cc_to_strt)[ki]
         pistop = targets(problem.cc_to_stop)[ki]
         iloc = ki - klo + one(J)
@@ -181,7 +181,7 @@ function schur_prepare_sparse!(
     rlo = first(rrange)
     slo = first(srange)
 
-    for j in srange
+    @inbounds for j in srange
         jloc = j - slo + one(J)
 
         for i in rrange
@@ -220,7 +220,7 @@ function build_schur!(
 
     setzero!(chol, shift)
 
-    @timeit TIMER "schur" for cc in oneto(problem.ncc)
+    @timeit TIMER "schur" @inbounds for cc in oneto(problem.ncc)
         fdsc = problem.frtptr[cc]
         root = problem.frtptr[cc + one(J)] - one(J)
         frange = fdsc:root

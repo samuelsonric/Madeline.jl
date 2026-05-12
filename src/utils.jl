@@ -40,7 +40,7 @@ end
 function symnorm(A::SparseMatrixCSC{T}) where T
     nrm = zero(T)
 
-    for j in axes(A, 2)
+    @inbounds for j in axes(A, 2)
         for p in nzrange(A, j)
             i = rowvals(A)[p]
             v = nonzeros(A)[p]
@@ -222,7 +222,7 @@ function apply_constraint_primal!(A::SparseMatrixCSC, indices::AbstractVector, X
         rmul!(y, β)
     end
 
-    for i in eachindex(y)
+    @inbounds for i in eachindex(y)
         y[i] += α * dotpacked(X, A, indices, i)
     end
 
@@ -240,7 +240,7 @@ function apply_constraint_dual!(A::SparseMatrixCSC, indices::AbstractVector, X::
         rmul!(X, β)
     end
 
-    for i in eachindex(y)
+    @inbounds for i in eachindex(y)
         axpypacked!(α * y[i], A, indices, i, X)
     end
 
