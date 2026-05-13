@@ -11,16 +11,16 @@
 #   - W: clique workspace for Schur complement assembly (max_cons_per_cc × max_cons_per_cc)
 #   - Σ: 2×2 capacitance matrix
 #   - γ: 2-vector for Σ⁻¹ξ solution
-#   - ρ: ⟨u₀, c₀⟩
-mutable struct KKT{T, Chol <: AbstractCholesky{T}}
-    const chol::Chol
-    const U::FMatrix{T}              # workspace for sparse constraints (max_cc_rows × max_rhs_per_cc)
-    const V::FMatrix{T}              # W^T W workspace (max_rhs_per_cc × max_rhs_per_cc)
-    const W::FMatrix{T}              # clique workspace (max_cons_per_cc × max_cons_per_cc)
-    const Γ::FMatrix{T}              # [u₀ c₀] after build_kkt!
-    const Σ::FMatrix{T}              # 2×2 capacitance
-    const γ::FVector{T}              # Σ⁻¹ξ solution
-    ρ::T                             # ⟨u₀, c₀⟩
+#   - w: precomputed Σ⁻¹(α v) where v = (1, -u_c)
+struct KKT{T, Chol <: AbstractCholesky{T}}
+    chol::Chol
+    U::FMatrix{T}              # workspace for sparse constraints (max_cc_rows × max_rhs_per_cc)
+    V::FMatrix{T}              # W^T W workspace (max_rhs_per_cc × max_rhs_per_cc)
+    W::FMatrix{T}              # clique workspace (max_cons_per_cc × max_cons_per_cc)
+    Γ::FMatrix{T}              # [u₀ c₀] after build_kkt!
+    Σ::FMatrix{T}              # 2×2 capacitance
+    γ::FVector{T}              # Σ⁻¹ξ solution
+    w::FVector{T}              # Σ⁻¹(α v), v = (1, -u_c)
 end
 
 function makecholesky(problem::SparseProblem{T, I}, settings::Settings{T}) where {T, I}
@@ -54,7 +54,8 @@ function KKT{T}(problem::Problem{T}, settings::Settings{T}) where {T}
     Γ = FMatrix{T}(undef, m, 2)
     Σ = FMatrix{T}(undef, 2, 2)
     γ = FVector{T}(undef, 2)
-    return KKT(chol, U, V, W, Γ, Σ, γ, zero(T))
+    w = FVector{T}(undef, 2)
+    return KKT(chol, U, V, W, Γ, Σ, γ, w)
 end
 
 # ===== Schur complement =====
@@ -299,21 +300,21 @@ function build_kkt!(
     ldiv_fwd!(cache.chol, cache.Γ)
 
     syrk!(Val(:L), Val(:T), one(T), cache.Γ, zero(T), cache.Σ)
-    symmtri!(cache.Σ, Val(:L))
 
-    Σ₁₁ = cache.Σ[1, 1]
-    Σ₂₁ = cache.Σ[2, 1]
-    Σ₂₂ = cache.Σ[2, 2]
+    α = w.τ / (one(T) + w.τ * cache.Σ[1, 1])
 
-    ω = w.τ
-    α = ω / (one(T) + ω * Σ₁₁)
+    cache.w[1] =  one(T)
+    cache.w[2] = -cache.Σ[2, 1]
 
-    cache.Σ[1, 1] =                          α
-    cache.Σ[2, 1] =  σ                     - α * Σ₂₁
-    cache.Σ[1, 2] = -σ                     - α * Σ₂₁
-    cache.Σ[2, 2] = symdot(w.X, problem.C) + α * Σ₂₁ * Σ₂₁ - Σ₂₂
+    cache.Σ[1, 1] = zero(T)
+    cache.Σ[2, 2] = symdot(w.X, problem.C) - cache.Σ[2, 2]
+    cache.Σ[2, 1] =  σ
+    cache.Σ[1, 2] = -σ
 
-    cache.ρ = Σ₂₁
+    ger!(α, cache.w, cache.w, cache.Σ)
+    solve2x2!(cache.Σ, cache.w)
+    lmul!(α, cache.w)
+
     return true
 end
 
@@ -358,18 +359,15 @@ function solve_kkt!(
     Γ₁ = view(cache.Γ, :, 1)
     Γ₂ = view(cache.Γ, :, 2)
 
-    cache.γ[1] =  dir.primal.τ
-    cache.γ[2] = -symdot(problem.C, dir.primal.X)
-
     @timeit TIMER "ldiv_fwd" ldiv_fwd!(cache.chol, dir.dual)
 
-    Δ = cache.Σ[1, 1] * dot(Γ₁, dir.dual)
-
-    cache.γ[1] +=                     Δ
-    cache.γ[2] += dot(Γ₂, dir.dual) - Δ * cache.ρ
+    cache.γ[1] =  dir.primal.τ
+    cache.γ[2] = -symdot(problem.C, dir.primal.X)
+    cache.γ[2] += dot(Γ₂, dir.dual)
 
     solve2x2!(cache.Σ, cache.γ)
 
+    axpy!(dot(Γ₁, dir.dual), cache.w, cache.γ)
     axpy!(cache.γ[2] * σ + dir.primal.τ, Γ₁, dir.dual)
     axpy!(cache.γ[2],                    Γ₂, dir.dual)
 
