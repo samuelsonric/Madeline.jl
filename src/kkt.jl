@@ -367,9 +367,9 @@ function solve_kkt!(
 
     solve2x2!(cache.Σ, cache.γ)
 
-    axpy!(dot(Γ₁, dir.dual), cache.w, cache.γ)
-    axpy!(cache.γ[2] * σ + dir.primal.τ, Γ₁, dir.dual)
-    axpy!(cache.γ[2],                    Γ₂, dir.dual)
+    axpy!(dot(Γ₁, dir.dual),             cache.w, cache.γ)
+    axpy!(cache.γ[2] * σ + dir.primal.τ, Γ₁,      dir.dual)
+    axpy!(cache.γ[2],                    Γ₂,      dir.dual)
 
     @timeit TIMER "ldiv_bwd" ldiv_bwd!(cache.chol, dir.dual)
 
