@@ -269,16 +269,14 @@ function prediction_toa_rhs!(
     hessian!(space, L, x, rhs.primal, scaling)
     thirdorder!(space, wrk.primal, L, x, res.primal, scaling)
 
-    dot1 = symdot(p.X, wrk.primal.X)
-    dot2 = symdot(d.X, rhs.primal.X)
-    viol = abs(dot1 - dot2) / (sqrt(eps(T)) + abs(dot2))
+    flag = relerr(dot(p, wrk.primal), dot(d, rhs.primal)) < 1e-4
 
-    if viol < 1e-4
+    if flag
         axpy!(one(T), wrk.primal, rhs.primal)
     end
 
     lmul!(μ, rhs.primal)
-    return
+    return flag
 end
 
 function centering_toa_rhs!(
@@ -311,17 +309,14 @@ function centering_toa_rhs!(
     hessian!(space, L, x, rhs.primal, scaling)
     thirdorder!(space, wrk.primal, L, x, res.primal, scaling)
 
-    dot1 = symdot(p.X, wrk.primal.X)
-    dot2 = symdot(d.X, rhs.primal.X)
-    viol = abs(dot1 - dot2) / (sqrt(eps(T)) + abs(dot2))
+    flag = relerr(dot(p, wrk.primal), dot(d, rhs.primal)) < 1e-4
 
-    if viol < 1e-4
+    if flag
         copyto!(rhs.primal, wrk.primal)
         lmul!(μ, rhs.primal)
-        return true
     end
 
-    return false
+    return flag
 end
 
 function linesearch_combined!(

@@ -1,3 +1,7 @@
+function relerr(a::T, b::T) where {T}
+    return abs(a - b) / (sqrt(eps(T)) + abs(b))
+end
+
 # flip a scaling flag
 #
 #     Val(true) ↔ Val(false)
